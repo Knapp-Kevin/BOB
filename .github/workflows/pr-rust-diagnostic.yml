@@ -4,25 +4,40 @@ on:
   pull_request:
     paths:
       - "src-tauri/**"
+      - "package.json"
       - ".github/workflows/pr-rust-diagnostic.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   rust-diagnostic:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'agent/materialize-lockfiles'
     name: Rust diagnostic (Windows)
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout
+      - name: Checkout PR head for one-time lockfile materialization
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Materialize frontend lockfile without changing manifest
+        run: npm install --package-lock-only --ignore-scripts
 
       - name: Install Rust 1.88 with validation components
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.88"
           components: rustfmt, clippy
+
+      - name: Materialize Cargo lockfile
+        run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
 
       - name: Cargo format check
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
@@ -33,9 +48,15 @@ jobs:
       - name: Cargo tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
-      - name: Publish generated Cargo lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-cargo-lock
-          path: src-tauri/Cargo.lock
-          if-no-files-found: error
+      - name: Commit generated lockfiles to this owned branch
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json src-tauri/Cargo.lock
+          if (-not (git diff --cached --quiet)) {
+            git commit -m "build: commit dependency lockfiles"
+            git push origin "HEAD:${{ github.head_ref }}"
+          } else {
+            Write-Host "Lockfiles already match generated dependency resolution."
+          }
