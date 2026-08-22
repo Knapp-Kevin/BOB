@@ -32,3 +32,10 @@ jobs:
 
       - name: Cargo tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Publish generated Cargo lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-cargo-lock
+          path: src-tauri/Cargo.lock
+          if-no-files-found: error
