@@ -21,26 +21,48 @@ The revived desktop architecture and core planning product are now implemented o
 - OS-backed secret storage;
 - advanced optional Gemini API credential/context capability behind fail-closed cost/privacy/provider-use policy;
 - accepted provider-independent runtime contract and Rust-owned runtime policy;
-- first non-user-facing fail-closed Ollama tracer behind that contract.
+- first non-user-facing fail-closed Ollama tracer behind that contract;
+- converged normal-mode Settings, Today, Inbox, and Chat presentation with hosted rendered evidence at normal/minimum sizes and relevant accessibility states;
+- dependency-free hosted rendered-UI diagnostics that complement, but do not replace, native Windows acceptance.
 
 These are current product surfaces, not future milestones.
 
-## Current priority: calm primary workflow
+## Recently completed: calm primary workflow
 
 **Goal:** Make B.O.B. feel like one calm prioritized assistant at normal information density.
 
-Governed by Wayfinder #86.
+Wayfinder #86 is complete. Its bounded implementation owners landed as:
 
-Current bounded slices:
+- Settings/provider positioning: PR #89;
+- Today hierarchy/density: #87 / PR #93;
+- Inbox and Chat density/conversation-workspace refinement: #88 / PR #106.
 
-- Settings/provider-positioning cleanup under #82;
-- Today hierarchy/density convergence under #87;
-- Inbox and Chat density/empty-state refinement under #88;
-- rendered desktop/accessibility evidence after each material UI slice.
+Reduced-information mode remains additive simplification rather than a rescue mechanism for a cluttered default experience. Future presentation defects should receive new bounded owners rather than keeping completed Wayfinder work permanently open.
 
-Reduced-information mode is additive simplification, not a rescue mechanism for a cluttered default experience.
+## Current priority: executable readiness
 
-## Current priority: provider-independent inference
+**Goal:** Turn landed source into repeatable, native, reviewable product evidence and remove the remaining first-alpha false greens.
+
+The immediate frontier is intentionally narrow:
+
+1. **Startup recovery:** #85 / draft PR #103 owns visible fail-closed startup recovery. Its hosted frontend, Windows Rust, and normal rendered regression gates are green on its current exact head, but it remains draft until the real Windows corrupt-state, backup-preview, process-restart, and recovery-surface accessibility behavior is exercised.
+2. **Windows package acceptance:** #84 is open and owns the native Windows 11 x64 NSIS install/launch/relaunch/icon/uninstall/retained-user-data evidence. Hosted package creation and a written runbook are not equivalent to native install acceptance.
+3. **Alpha convergence audit:** after those owners are truthfully dispositioned, re-evaluate the first-alpha success criteria and remaining native credential/provider/restart evidence before declaring the waypoint complete.
+
+Supporting readiness work includes:
+
+- locked/reproducible npm and Cargo dependency state;
+- frontend production build/type validation;
+- Rust fmt/clippy/tests and Tauri build on capable environments;
+- Windows persistence/restart/recovery exercises;
+- Windows Credential Manager behavior;
+- rendered desktop/accessibility regression at supported sizes;
+- provider-boundary validation where live inference is exercised;
+- exact-head evidence after merges or rebases that invalidate prior validation.
+
+Small CI remains a safety net. Native/recovery/provider/package evidence is not replaced by green hosted checks.
+
+## Current priority after readiness: provider-independent inference
 
 **Goal:** Make inference replaceable without making provider plumbing B.O.B.'s product identity.
 
@@ -57,29 +79,11 @@ Current accepted direction:
 - preserve deterministic useful operation with no inference configured;
 - preserve no-surprise billing and no silent provider/model fallback.
 
-The near-term build priority is evidence, not adapter proliferation: finish active native/rendered recovery and UX acceptance plus Windows installer smoke, then promote one already-authorized inference path with real native evidence. Do not invent unsupported account entitlement or add placeholder provider controls merely to make Settings look future-ready.
-
-## Current priority: executable readiness
-
-**Goal:** Turn landed source into repeatable, native, reviewable product evidence.
-
-Includes:
-
-- locked/reproducible npm and Cargo dependency state;
-- frontend production build/type validation;
-- Rust fmt/clippy/tests and Tauri build on capable environments;
-- Windows persistence/restart/recovery exercises;
-- Windows Credential Manager behavior;
-- rendered desktop/accessibility regression at supported sizes;
-- provider-boundary validation where live inference is exercised;
-- NSIS package install/launch/uninstall smoke;
-- exact-head evidence after merges or rebases that invalidate prior validation.
-
-Small CI remains a safety net. Native/rendered/recovery/provider evidence is not replaced by green hosted checks.
+The next runtime step should promote one already-authorized path with real native evidence after the active recovery/package readiness frontier is reconciled. Do not respond to a cleaner queue by proliferating adapters or placeholder provider controls.
 
 ## Next capability candidates
 
-These are directional and require accepted product/architecture authority before implementation where not already governed:
+These are directional and require accepted product/architecture authority before implementation where not already governed.
 
 ### Additional supported inference paths
 
@@ -92,7 +96,9 @@ These are directional and require accepted product/architecture authority before
 
 ADR-0006 accepts the direction that harness-neutral B.O.B. behavior should be portable behind B.O.B.-owned contracts while the Tauri desktop application remains a first-party host rather than the only possible host.
 
-The first proving target is a **B.O.B.-owned DeepSeek Harness adapter**, implemented entirely in this repository. The useful DeepSeek lesson is capability/service-definition separation and explicit lifecycle, not a wholesale dependency on Cordis or DeepSeek's current API shape. RFC-0004 remains Proposed while the exact portable slice, cross-language bridge, protocol versioning, and supported DeepSeek version range are proven.
+Design-intent issue #109 is complete because the direction and sequencing are durably recorded. **Proposed RFC-0004** now owns the unresolved implementation contract.
+
+The first proving target is a **B.O.B.-owned DeepSeek Harness adapter**, implemented entirely in this repository. The useful DeepSeek lesson is capability/service-definition separation and explicit lifecycle, not a wholesale dependency on Cordis or DeepSeek's current API shape. RFC-0004 must settle the exact portable slice, cross-language bridge, protocol versioning, supported DeepSeek version range, and validation matrix before substantial portability code lands.
 
 QOR Agent and GG-CORE are complementary integration targets/reference boundaries:
 
@@ -100,7 +106,7 @@ QOR Agent and GG-CORE are complementary integration targets/reference boundaries
 - GG-CORE may satisfy B.O.B.'s inference/runtime port through its supported Rust or authenticated local IPC surface while B.O.B. retains state, policy, proposal, and tool authority;
 - Cloudflare remains one possible QOR host/proving implementation, not the definition of the QOR Agent harness.
 
-Sequence this work **after current alpha stabilization**, then extract only the minimum portable vertical slice required by the real second host. This is first-party composition, not authorization for a broad plugin marketplace.
+Sequence this work **after alpha stabilization and convergence**, beginning with RFC-0004 P0 boundary classification and then extracting only the minimum portable vertical slice required by a real second host. This is first-party composition, not authorization for a broad plugin marketplace.
 
 ### Bounded delegated work
 
