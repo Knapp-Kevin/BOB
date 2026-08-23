@@ -31,7 +31,9 @@ Current `master` includes, at minimum:
 - B.O.B. Assist core with Rust-enforced preview-before-apply proposal authority;
 - OS-backed credential/secret-store boundary;
 - Windows-first packaging and validation contract;
-- advanced optional Gemini API credential and context-inference path with fail-closed billing/privacy/provider-use policy.
+- advanced optional Gemini API credential and context-inference path with fail-closed billing/privacy/provider-use policy;
+- accepted provider-independent runtime contract from RFC-0002 plus Rust-owned fail-closed runtime policy;
+- first non-user-facing Ollama tracer behind that contract, with conservative loopback/locality classification and no fallback or canonical-state authority.
 
 These are current implementation surfaces, not future phases.
 
@@ -54,11 +56,15 @@ Wayfinder #79 supersedes the idea that one provider is B.O.B.'s permanent destin
 Current rules:
 
 - Gemini Developer API remains a working advanced optional adapter and first-alpha proof point;
-- account-backed or local paths are preferred for normal-user onboarding when officially supported and accepted;
-- do not invent Google account/OAuth, Claude/Codex, Ollama/LM Studio, or first-party local-runtime behavior ahead of the governing research/decisions;
+- #80 resolved the Google/account-backed factual boundary: no direct embeddable Google OAuth inference API currently exposes ordinary Gemini consumer entitlement to B.O.B.; Antigravity is only an optional external-runtime candidate behind B.O.B.-owned state/routing/policy;
+- #81 resolved the local-runtime direction: prefer a Rust-owned `LocalRuntimeAdapter`, initially targeting an in-process Rust engine with GGUF support while preserving optional Ollama/LM Studio compatibility;
+- RFC-0002 and the Rust runtime-policy foundation define the minimum provider-independent runtime/auth/billing/locality contract;
+- the landed Ollama tracer is an implementation proof behind that contract, not a mandatory runtime or product identity;
 - every path remains behind B.O.B.-owned routing, continuity, state, privacy, authority, and cost policy;
 - deterministic B.O.B. remains useful with no inference configured;
 - no silent paid/provider/model fallback.
+
+Do not invent unsupported account-backed entitlement, new adapters, or future-provider controls. The current priority is to finish active native/rendered recovery, UX, and packaging acceptance before widening provider surface area, then promote one already-authorized inference path with real native evidence.
 
 ### 3. Executable readiness
 
@@ -91,8 +97,8 @@ Do not manufacture speculative expansion merely to keep the loop occupied.
 
 The following require later accepted authority or current Wayfinder convergence before implementation:
 
-- new account-backed runtime adapters whose supported integration path is not yet established;
-- local inference architecture beyond the accepted provider-independent seam;
+- additional account-backed runtime adapters beyond currently established supported integration facts;
+- broader local inference implementation beyond the accepted `LocalRuntimeAdapter` direction and already-landed tracer work;
 - mobile clients and cloud/shared continuity;
 - Delegate/tool execution beyond bounded accepted authority;
 - generalized RAG/knowledge-center infrastructure;
