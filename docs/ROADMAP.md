@@ -19,7 +19,9 @@ The revived desktop architecture and core planning product are now implemented o
 - B.O.B. Assist core and preview-before-apply proposal authority;
 - accessibility preferences and visible keyboard-focus corrections;
 - OS-backed secret storage;
-- advanced optional Gemini API credential/context capability behind fail-closed cost/privacy/provider-use policy.
+- advanced optional Gemini API credential/context capability behind fail-closed cost/privacy/provider-use policy;
+- accepted provider-independent runtime contract and Rust-owned runtime policy;
+- first non-user-facing fail-closed Ollama tracer behind that contract.
 
 These are current product surfaces, not future milestones.
 
@@ -44,17 +46,18 @@ Reduced-information mode is additive simplification, not a rescue mechanism for 
 
 Governed by Wayfinder #79.
 
-Direction:
+Current accepted direction:
 
 - B.O.B. remains the single user-facing agent and owns state, continuity, deterministic services, routing, authority, privacy, and billing policy;
 - Gemini Developer API remains a supported advanced optional adapter and first-alpha proof point;
-- prefer simple account-backed or local normal-user paths where officially supported and accepted;
-- evaluate provider-specific account/runtime and local-runtime options without making any one proprietary client mandatory;
+- #80 established that ordinary Gemini consumer entitlement is not currently exposed through a direct embeddable Google OAuth inference API for B.O.B.; Antigravity remains only an optional external-runtime candidate;
+- #81 established the local-runtime direction: a Rust-owned `LocalRuntimeAdapter`, initially favoring an in-process Rust engine with GGUF support while retaining optional Ollama/LM Studio compatibility;
+- RFC-0002 plus the landed runtime-policy foundation normalize only the runtime identity, readiness, auth, billing, locality/privacy, capability, lifecycle, resource, and failure fields B.O.B. actually needs;
+- the landed Ollama tracer proves one adapter behind that seam without making Ollama mandatory;
 - preserve deterministic useful operation with no inference configured;
-- preserve no-surprise billing and no silent provider/model fallback;
-- normalize only the runtime/auth/capability fields B.O.B. actually needs.
+- preserve no-surprise billing and no silent provider/model fallback.
 
-Unresolved factual/provider questions remain governed by their Wayfinder research owners. Do not invent unsupported Google OAuth, Claude/Codex, Ollama/LM Studio, or first-party local-runtime behavior merely to fill Settings.
+The near-term build priority is evidence, not adapter proliferation: finish active native/rendered recovery and UX acceptance plus Windows installer smoke, then promote one already-authorized inference path with real native evidence. Do not invent unsupported account entitlement or add placeholder provider controls merely to make Settings look future-ready.
 
 ## Current priority: executable readiness
 
@@ -80,9 +83,9 @@ These are directional and require accepted product/architecture authority before
 
 ### Additional supported inference paths
 
-- officially supported account-backed runtimes;
-- local inference through a smallest-sufficient provider-independent seam;
-- compatibility with user-owned local runtime installations where accepted;
+- officially supported account-backed runtimes whose entitlement and integration contract are established;
+- B.O.B.-native local inference through the accepted `LocalRuntimeAdapter` direction;
+- optional compatibility with user-owned local runtime installations such as Ollama or LM Studio where the fail-closed locality/billing contract can be proven;
 - runtime switching while preserving one B.O.B. identity and continuity.
 
 ### Bounded delegated work
