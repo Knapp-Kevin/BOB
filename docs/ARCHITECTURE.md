@@ -1,11 +1,12 @@
 # Target Architecture
 
 **Status:** Accepted  
-**Related RFCs:** RFC-0001, RFC-0002, RFC-0003
+**Related RFCs:** RFC-0001, RFC-0002, RFC-0003; RFC-0004 (Proposed)  
+**Related decisions:** ADR-0006
 
 ## Architectural objective
 
-Build the smallest desktop architecture that presents one coherent B.O.B. agent, safely owns local personal state, and can draw on multiple inference runtimes and tools over time without exposing backend complexity as the user's interaction model.
+Build the smallest standalone desktop architecture that presents one coherent B.O.B. agent, safely owns local personal state, and can draw on multiple inference runtimes and tools over time without exposing backend complexity as the user's interaction model. Keep genuinely harness-neutral B.O.B. behavior portable behind B.O.B.-owned typed contracts so the desktop host is a first-party product surface rather than an accidental permanent container for every B.O.B. capability.
 
 The current desktop architecture is a Tauri 2 shell with a Rust application core and a framework-free TypeScript + Vite frontend. Windows 11 x64 is the primary supported platform for the current runnable waypoint.
 
@@ -15,7 +16,48 @@ The first-alpha Gemini Developer API Free path proved the inference, credential,
 
 > **B.O.B. is the agent. Models, inference runtimes, provider APIs/CLIs, and tools are capabilities behind B.O.B.**
 
-The user has one point of contact: B.O.B. Removing any single inference adapter must leave B.O.B. buildable, launchable, state-safe, and usefully deterministic.
+The user has one point of contact in the standalone product: B.O.B. Removing any single inference adapter must leave B.O.B. buildable, launchable, state-safe, and usefully deterministic.
+
+ADR-0006 clarifies the deployment consequence: the standalone product invariant does not require harness-neutral B.O.B. capabilities to remain physically coupled to the Tauri desktop host. Another host may consume bounded B.O.B. capabilities without silently becoming the canonical B.O.B. product or state owner.
+
+## Host portability boundary
+
+B.O.B. uses a **portable capability core + host adapters** direction.
+
+```mermaid
+flowchart TB
+    PORTABLE[B.O.B. portable capability contracts\nplanning · proposals · context · policy types]
+
+    DESKTOP[B.O.B. Desktop Host\nTauri + Rust]
+    DEEPSEEK[Future B.O.B.-owned\nDeepSeek Harness adapter]
+    QOR[Future B.O.B.-owned\nQOR Agent adapter]
+
+    DESKTOP --> PORTABLE
+    DEEPSEEK --> PORTABLE
+    QOR --> PORTABLE
+
+    DESKTOP --> STATE[(SQLite canonical state)]
+    DESKTOP --> SECRET[OS secret store]
+    DESKTOP --> INFER[Inference/runtime port]
+
+    INFER --> GEMINI[Gemini API]
+    INFER --> OLLAMA[Ollama compatibility]
+    INFER --> GG[GG-CORE\nRust or authenticated local IPC]
+```
+
+Dependency rules:
+
+- harness-neutral B.O.B. definitions do not depend on Tauri, DeepSeek Harness, QOR Agent, Cloudflare, GG-CORE, or a concrete inference provider;
+- the desktop host and external-harness adapters depend inward on B.O.B.-owned definitions;
+- external-harness dependencies terminate inside their B.O.B.-owned adapter boundary;
+- the first DeepSeek integration is a proving adapter, not a decision to make DeepSeek Harness part of B.O.B. core;
+- QOR Agent integration uses its public extension seams when a concrete use case warrants it; Cloudflare is one possible QOR host/proving surface, not the definition of the QOR Agent harness;
+- GG-CORE sits below B.O.B.'s inference/runtime port and retains only its inference-execution responsibilities; B.O.B. retains state, authority, proposal, tool, privacy, and cost decisions;
+- portability work for these integrations is implemented in this repository and does not require source changes in the target repositories.
+
+The first external-harness mode should be stateless unless a later accepted contract explicitly defines canonical owner, namespace, migration, synchronization, recovery, deletion/export, and credential behavior. A host harness session does not become B.O.B. canonical state by implication.
+
+The exact portable crate/package boundary and DeepSeek cross-language bridge remain governed by Proposed RFC-0004 and must not be invented ahead of acceptance.
 
 ## System context
 
@@ -123,6 +165,8 @@ It does not surrender canonical state ownership to an underlying runtime. Model/
 
 The Rust core owns deterministic business behavior, including item lifecycle, planning, persistence orchestration, export/migration, proposal validation, preference handling, and authority/cost enforcement. These services remain useful when no inference runtime is available.
 
+ADR-0006 allows suitable deterministic services to move behind portable B.O.B.-owned contracts when a real second host requires them. Extraction does not change their semantics or transfer their authority to the consuming harness.
+
 ### Inference router
 
 The inference router selects only allowed capabilities according to supported configuration, explicit user choice where applicable, availability, auth state, billing classification, privacy constraints, and required capability.
@@ -148,9 +192,13 @@ An adapter may report, where supported:
 
 Gemini Developer API is the currently implemented cloud adapter and remains subject to its accepted professional/business-use, unpaid-service data-use, secret, and billing boundaries. Account-backed and local adapters remain governed by Wayfinder #79 and must not be invented ahead of accepted authority.
 
+GG-CORE, when integrated, implements this inference/runtime role through a supported B.O.B.-owned adapter. It does not become an application-state or tool-authority boundary.
+
 ### Tool gateway
 
 Tools are separate capabilities from inference/runtime identity. Future Delegate behavior may add bounded execution authority through explicit user grants. Ordinary Assist requests do not inherit shell, filesystem, repository, or broad external permissions.
+
+An external harness exposing a B.O.B. capability does not receive Delegate authority merely because it can invoke that capability. Any executable authority crossing a host-adapter boundary requires its own accepted contract.
 
 ### Persistence
 
@@ -169,7 +217,9 @@ Persistence is local-first and single-user. The accepted contract is:
 
 The SQLite schema owns ordinary product state, not an open-ended advanced memory subsystem. Richer governed-memory behavior should preferentially integrate later with `MythologIQ-Labs-LLC/agent-memory` through an explicit contract.
 
-See ADR-0004 and RFC-0003.
+Stateless external-harness capability use does not create another B.O.B. database. Stateful embedding is deferred until a separate accepted state-ownership contract exists.
+
+See ADR-0004, ADR-0006, RFC-0003, and Proposed RFC-0004.
 
 ## Request flow
 
@@ -246,6 +296,8 @@ B.O.B. stores compact continuity needed to preserve the one-agent experience acr
 
 Authority belongs to B.O.B., not whichever runtime supplied inference. Assist may reason, summarize, organize, transform, and propose using an allowed adapter. Important state changes remain validated and previewed before application. Future Delegate behavior requires a separate bounded grant.
 
+For an external harness consuming a stateless B.O.B. capability, the host owns its surrounding session/lifecycle while B.O.B. capability code owns only the semantics of its typed request/result boundary. Host authority is not imported into B.O.B. by default.
+
 ## Cost-policy boundary
 
 Every inference/runtime adapter declares one billing class: `free`, `subscription`, `local`, `metered`, or `unknown`.
@@ -265,23 +317,25 @@ B.O.B. degrades safely:
 - invalid model proposal: reject without changing canonical state;
 - persistence interruption: preserve user data and follow ADR-0004/RFC-0003 recovery semantics;
 - runtime/provider failure: isolate failure from canonical state;
+- external-harness adapter failure: isolate the adapter from standalone B.O.B. state and fail through a bounded typed error;
 - future tool failure: return evidence/status without widening authority.
 
 ## Technology boundaries
 
 Current direction:
 
-- Tauri 2 desktop shell;
-- Rust privileged application core;
+- Tauri 2 desktop shell as the current first-party standalone host;
+- Rust privileged application core with a future portable capability boundary defined by ADR-0006;
 - framework-free TypeScript + Vite frontend;
 - Windows 11 x64 primary platform;
-- one B.O.B. agent identity;
+- one B.O.B. agent identity in the standalone product;
 - Rust-owned SQLite canonical ordinary-state store;
 - OS-backed secret-store boundary;
 - provider-independent inference/runtime seams;
 - Gemini Developer API as an advanced optional current adapter;
-- no required local HTTP inference server, Python runtime, vector database, peer-agent UX, or mandatory provider client;
+- future first-party external-harness adapters remain optional and live in this repository;
+- no required local HTTP inference server, Python runtime, vector database, peer-agent UX, plugin marketplace, or mandatory provider/harness client;
 - no direct UI access to native secrets, database, shell, or arbitrary filesystem;
 - no competing advanced-memory subsystem inside ordinary SQLite state.
 
-Future account-backed adapters, local inference, governed-memory integration, and bounded tools may extend these seams only when authorized by later product/architecture decisions.
+Future account-backed adapters, local inference, governed-memory integration, bounded tools, and external-harness adapters may extend these seams only under accepted product/architecture authority. Proposed RFC-0004 must be accepted before substantial portable-host implementation proceeds.
