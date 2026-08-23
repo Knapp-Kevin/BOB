@@ -31,7 +31,6 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .overwhelmed span { font-size: 20px; text-align: center; }
 .overwhelmed b, .overwhelmed small { display: block; }
 .overwhelmed small { color: #bcd8e8; margin-top: 3px; }
-.provider { border: 0; background: transparent; color: #bcd8e8; display: flex; align-items: center; gap: 8px; padding: 6px 9px; font-size: 12px; text-align: left; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #f0a548; flex: 0 0 auto; }
 .dot.ok { background: #4bc687; }
 main { padding: 35px 38px; max-width: 1460px; width: 100%; margin: 0 auto; }

@@ -50,12 +50,10 @@
 }
 @media (max-width: 800px) {
   .shell { grid-template-columns: 76px minmax(0,1fr); }
-  .brand b, .brand small, .nav strong, .overwhelmed div, .provider { font-size: 0; }
+  .brand b, .brand small, .nav strong, .overwhelmed div { font-size: 0; }
   .brand img { width: 48px; height: 48px; }
   .nav { justify-content: center; padding: 13px; }
   .overwhelmed { grid-template-columns: 1fr; justify-items: center; }
-  .provider { justify-content: center; }
-  .provider .dot { margin: 0; }
   main { padding: 23px 17px; }
   header p { display: none; }
   .capture { grid-template-columns: 40px 1fr auto; }
