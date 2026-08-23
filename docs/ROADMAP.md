@@ -100,7 +100,7 @@ QOR Agent and GG-CORE are complementary integration targets/reference boundaries
 - GG-CORE may satisfy B.O.B.'s inference/runtime port through its supported Rust or authenticated local IPC surface while B.O.B. retains state, policy, proposal, and tool authority;
 - Cloudflare remains one possible QOR host/proving implementation, not the definition of the QOR Agent harness.
 
-Sequence this work **after current alpha stabilization**, then extract only the minimum portable vertical slice required by the real second host. This is first-party composition, not permission to build a plugin marketplace because apparently software has not suffered enough from those already.
+Sequence this work **after current alpha stabilization**, then extract only the minimum portable vertical slice required by the real second host. This is first-party composition, not authorization for a broad plugin marketplace.
 
 ### Bounded delegated work
 
