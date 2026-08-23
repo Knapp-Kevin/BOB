@@ -13,6 +13,8 @@ Architectural invariant:
 
 > **B.O.B. is the agent. Models, inference runtimes, provider APIs/CLIs, and tools are capabilities behind B.O.B.**
 
+ADR-0006 clarifies that this standalone-product invariant does not require every harness-neutral B.O.B. capability to remain physically coupled to the Tauri desktop host. Portable capabilities may later be consumed by other first-party host adapters while preserving explicit identity, state, and authority ownership.
+
 ## Current governing maps
 
 - #30: first runnable B.O.B. alpha waypoint and settled foundational authority;
@@ -80,6 +82,24 @@ Source review and small hosted CI are not release evidence by themselves. Contin
 
 If a merge/rebase changes a previously validated head, rerun the affected evidence rather than inheriting it cosmetically.
 
+## Authorized post-alpha portability frontier
+
+Issue #109 and ADR-0006 establish a future **portable capability core + first-party host adapters** direction. This work is authorized as design intent but is deliberately sequenced after the current alpha stabilization frontier.
+
+RFC-0004 is Proposed and owns the implementation contract. Before substantial portability code lands, it must settle the first portable capability slice, cross-language bridge, protocol/versioning shape, supported DeepSeek Harness version range, and validation matrix.
+
+Expected bounded sequence after alpha convergence:
+
+1. classify current Rust modules into portable domain behavior, host services, runtime/provider adapters, and Tauri/presentation lifecycle without moving code;
+2. extract one deterministic vertical slice that can run without Tauri;
+3. define only the host ports/conformance fixtures required by that slice;
+4. move the existing desktop path onto the same contract and prove no standalone regression;
+5. implement a thin B.O.B.-owned DeepSeek Harness tracer adapter against a pinned supported harness version;
+6. harden compatibility, lifecycle/cancellation, packaging, failure behavior, and adapter removal;
+7. consider QOR Agent or additional adapters only when they prove a concrete requirement rather than expanding the abstraction surface by anticipation.
+
+GG-CORE remains an inference/runtime integration below B.O.B.'s inference port. QOR Agent remains an optional harness integration target through its public seams. Neither requires a write outside this repository for B.O.B. portability work.
+
 ## Continuous tracer-bullet model
 
 Select one bounded slice per governed cycle when possible. A good slice:
@@ -99,10 +119,11 @@ The following require later accepted authority or current Wayfinder convergence 
 
 - additional account-backed runtime adapters beyond currently established supported integration facts;
 - broader local inference implementation beyond the accepted `LocalRuntimeAdapter` direction and already-landed tracer work;
+- stateful B.O.B. embedding in an external harness before explicit state ownership, namespace, migration, recovery, and synchronization semantics are accepted;
 - mobile clients and cloud/shared continuity;
 - Delegate/tool execution beyond bounded accepted authority;
 - generalized RAG/knowledge-center infrastructure;
-- plugin marketplaces;
+- broad plugin marketplaces or arbitrary dynamic plugin loading;
 - peer-agent/multi-agent UX;
 - cognitive profiling or diagnostic behavior.
 
