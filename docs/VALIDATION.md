@@ -148,11 +148,16 @@ Do not create a large hosted matrix.
 The current diagnostic safety net is intentionally path-scoped and consumes committed lockfiles deterministically:
 
 - frontend changes under `src/**` plus frontend manifest/lock/config changes run Node 22 `npm ci` followed by `npm run build`;
-- Rust changes under `src-tauri/**` run Rust 1.88 format plus Clippy and tests with locked dependency resolution.
+- Rust changes under `src-tauri/**` run Rust 1.88 format plus Clippy and tests with locked dependency resolution;
+- material frontend changes also run the bounded rendered diagnostic in `.github/workflows/pr-rendered-ui-diagnostic.yml`, which serves the production Vite build and drives the hosted runner's existing Chrome/Chromium binary through the dependency-free `scripts/rendered-ui-diagnostic.mjs` Chrome DevTools Protocol harness.
 
-These jobs are useful build/type/format/lint/test execution evidence. They do not replace the stronger platform and product evidence required by the affected change.
+The rendered diagnostic captures Today, Inbox, Chat, and Settings at the Tauri-configured normal `1400x900` and minimum `900x640` window sizes. It also exercises reduced-information mode, larger text, reduced motion, keyboard Tab progression, and the advanced Gemini setup dialog without using a provider credential. The job uploads screenshots, a machine-readable `audit.json`, and browser/Vite logs. It fails on missing route activation, document-level horizontal overflow, horizontally clipped focusable controls, a missing setup dialog, or broken keyboard focus progression.
 
-Routine hosted CI does not replace Windows Credential Manager testing, restart/recovery testing, rendered UX review, installer verification, or live-provider evidence.
+A successful rendered diagnostic is legitimate **hosted Vite/browser presentation evidence**, not self-proving visual acceptance. The screenshots and audit artifact must still be inspected for hierarchy, dead space, accidental stacking, readability, and other qualitative defects the automated checks cannot judge. It is not Windows/Tauri evidence and cannot prove native lifecycle, persistence/restart, Credential Manager, recovery filesystem behavior, provider behavior, or packaging.
+
+The build, Rust, and rendered jobs are useful execution evidence. They do not replace the stronger platform and product evidence required by the affected change.
+
+Routine hosted CI does not replace Windows Credential Manager testing, restart/recovery testing, native rendered UX review where the Tauri boundary matters, installer verification, or live-provider evidence.
 
 ## PR evidence template
 
