@@ -5,6 +5,7 @@ on:
     paths:
       - "src/**"
       - "package.json"
+      - "package-lock.json"
       - "tsconfig.json"
       - "vite.config.ts"
       - ".github/workflows/pr-frontend-diagnostic.yml"
@@ -26,8 +27,8 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install frontend dependencies
-        run: npm install
+      - name: Install locked frontend dependencies
+        run: npm ci
 
       - name: TypeScript and Vite production build
         run: npm run build

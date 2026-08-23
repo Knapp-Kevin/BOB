@@ -27,8 +27,8 @@ jobs:
       - name: Cargo format check
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
-      - name: Cargo clippy
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Cargo clippy with locked dependencies
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
 
-      - name: Cargo tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Cargo tests with locked dependencies
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
