@@ -5,8 +5,10 @@ mod gemini;
 pub mod ollama;
 mod planner;
 mod proposals;
+mod recovery_backup;
 pub mod runtime;
 mod secrets;
+mod startup;
 mod state;
 mod work;
 
@@ -17,17 +19,33 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
-            let store = state::Store::open(&data_dir)
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            work::normalize_store(&store)
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            let gemini = gemini::GeminiCredentials::new()
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            app.manage(store);
-            app.manage(gemini);
+
+            match state::Store::open(&data_dir).and_then(|store| {
+                work::normalize_store(&store)?;
+                Ok(store)
+            }) {
+                Ok(store) => {
+                    app.manage(store);
+                    app.manage(startup::StartupState::ready());
+
+                    // Inference is optional. A provider credential-store initialization problem must
+                    // not make deterministic B.O.B. fail to launch.
+                    if let Ok(gemini) = gemini::GeminiCredentials::new() {
+                        app.manage(gemini);
+                    }
+                }
+                Err(_) => {
+                    // Canonical state remains untouched. The frontend reads this restricted startup
+                    // status before invoking any command that requires Store-managed state.
+                    app.manage(startup::StartupState::recovery_required(&data_dir));
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            startup::startup_status,
+            startup::restart_application,
+            recovery_backup::validate_recovery_backup_command,
             state::load_work_state,
             state::load_accessibility_preferences,
             state::set_accessibility_preferences,

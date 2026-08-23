@@ -4,6 +4,52 @@ import type { AccessibilityPreferences, GeminiCredentialStatus, ItemKind, Persis
 const isTauriRuntime = () => "__TAURI_INTERNALS__" in window;
 const browserGeminiStatus: GeminiCredentialStatus = { configured: false, validation: "notConfigured" };
 
+export type ManagedBackupCandidate = {
+  id: string;
+  modifiedUnixMs: number | null;
+  sizeBytes: number;
+};
+
+export type RecoveryBackupPreview = {
+  candidateId: string;
+  validation: "usable" | "unavailable";
+  workItemCount: number | null;
+  hasActiveItem: boolean | null;
+  message: string;
+};
+
+export type StartupStatus = {
+  mode: "ready" | "recoveryRequired";
+  managedBackupCount: number | null;
+  managedBackupCandidates: ManagedBackupCandidate[] | null;
+};
+
+export async function loadStartupStatus(): Promise<StartupStatus> {
+  if (!isTauriRuntime()) return { mode: "ready", managedBackupCount: 0, managedBackupCandidates: [] };
+  return invoke<StartupStatus>("startup_status");
+}
+
+export async function validateRecoveryBackup(candidateId: string): Promise<RecoveryBackupPreview> {
+  if (!isTauriRuntime()) {
+    return {
+      candidateId,
+      validation: "unavailable",
+      workItemCount: null,
+      hasActiveItem: null,
+      message: "Recovery backup validation is available only in the installed B.O.B. application.",
+    };
+  }
+  return invoke<RecoveryBackupPreview>("validate_recovery_backup_command", { candidateId });
+}
+
+export async function restartApplication(): Promise<void> {
+  if (!isTauriRuntime()) {
+    window.location.reload();
+    return;
+  }
+  return invoke<void>("restart_application");
+}
+
 export async function loadPersistentWorkState(): Promise<PersistentWorkState | null> {
   if (!isTauriRuntime()) return null;
   return invoke<PersistentWorkState>("load_work_state");
