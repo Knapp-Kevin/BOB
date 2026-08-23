@@ -1,0 +1,87 @@
+name: PR Rendered UI diagnostic
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "scripts/rendered-ui-diagnostic.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "vite.config.ts"
+      - ".github/workflows/pr-rendered-ui-diagnostic.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  rendered-ui-diagnostic:
+    name: Rendered UI diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install locked frontend dependencies
+        run: npm ci
+
+      - name: TypeScript and Vite production build
+        run: npm run build
+
+      - name: Locate hosted Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
+          if [[ -z "$CHROME_BIN" ]]; then
+            echo "No hosted Chrome/Chromium binary is available on this runner." >&2
+            exit 1
+          fi
+          echo "CHROME_BIN=$CHROME_BIN" >> "$GITHUB_ENV"
+          echo "Using $CHROME_BIN"
+
+      - name: Start Vite preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p rendered-artifacts
+          npm run preview > rendered-artifacts/vite.log 2>&1 &
+          echo $! > rendered-artifacts/vite.pid
+          for attempt in {1..40}; do
+            if curl --fail --silent --show-error http://127.0.0.1:4173/ > /dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          cat rendered-artifacts/vite.log >&2
+          exit 1
+
+      - name: Capture rendered application states
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$CHROME_BIN" \
+            --headless=new \
+            --no-sandbox \
+            --disable-gpu \
+            --disable-dev-shm-usage \
+            --remote-debugging-address=127.0.0.1 \
+            --remote-debugging-port=9222 \
+            about:blank > rendered-artifacts/chrome.log 2>&1 &
+          echo $! > rendered-artifacts/chrome.pid
+          node scripts/rendered-ui-diagnostic.mjs
+
+      - name: Upload rendered evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-ui-${{ github.event.pull_request.head.sha }}
+          path: rendered-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
