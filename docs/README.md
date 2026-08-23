@@ -38,6 +38,7 @@ flowchart TB
 | --- | --- |
 | Understand why B.O.B. exists and what it owns | [`PRODUCT.md`](PRODUCT.md) |
 | Understand the single-agent architecture, state ownership, inference routing, trust boundaries, and data flow | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
+| Understand portable B.O.B. capabilities and first-party external-harness adapters | [`adr/ADR-0006-portable-capabilities-and-host-adapters.md`](adr/ADR-0006-portable-capabilities-and-host-adapters.md) and [`rfc/RFC-0004-portable-capability-host-contract.md`](rfc/RFC-0004-portable-capability-host-contract.md) |
 | Understand Today, Inbox, Chat, accessibility, overwhelm reduction, and interaction rules | [`DESIGN.md`](DESIGN.md) |
 | Understand implementation order and acceptance gates | [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) |
 | Understand release sequencing | [`ROADMAP.md`](ROADMAP.md) |
@@ -91,7 +92,7 @@ The invariant is simple:
 
 > **B.O.B. is the agent. Models, inference runtimes, provider CLIs, and tools are capabilities behind B.O.B.**
 
-The user gets one identity, one continuity layer, and one place where only relevant complexity should become visible.
+The user gets one identity, one continuity layer, and one place where only relevant complexity should become visible. ADR-0006 additionally permits harness-neutral B.O.B. capabilities to be consumed through first-party host adapters without transferring standalone B.O.B. state or product identity to the host by implication.
 
 ## Documentation quality bar
 
@@ -108,11 +109,11 @@ Detailed requirements are in [`governance/DOCUMENTATION_STANDARD.md`](governance
 
 ## Current implementation status
 
-B.O.B. is public and MIT licensed, but the revived application is still pre-alpha and not yet runnable. The active tree intentionally excludes the retired Electron/Ollama implementation so old code cannot masquerade as the current product.
+B.O.B. is public, MIT licensed, and in active pre-alpha development on the revived Tauri 2 + Rust architecture. The active tree now contains Rust-owned local state, Today/Inbox workflows, deterministic planning, B.O.B. Assist/proposal boundaries, recovery/export foundations, accessibility preferences, provider-independent runtime policy, and an advanced optional Gemini API capability.
 
-The next implementation boundary is defined in [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md): establish the Tauri/Rust foundation and canonical local-state boundary before B.O.B.'s first inference adapter.
+The remaining current work is primarily executable/readiness and rendered-product convergence: native Windows recovery/credential/package exercises, exact-head validation, rendered accessibility/UX evidence, and provider-independent runtime proving. Use [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md), the active Wayfinder maps, and current issues/PRs for the live frontier.
 
-Repository CI is intentionally minimal. [`AGENTS.md`](../AGENTS.md) makes the implementing developer or coding agent responsible for relevant local validation and explicit evidence in each pull request.
+Repository CI is intentionally minimal. [`AGENTS.md`](../AGENTS.md) makes the implementing developer or coding agent responsible for relevant validation and explicit evidence in each pull request.
 
 ## Historical material
 
