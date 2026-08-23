@@ -88,6 +88,20 @@ These are directional and require accepted product/architecture authority before
 - optional compatibility with user-owned local runtime installations such as Ollama or LM Studio where the fail-closed locality/billing contract can be proven;
 - runtime switching while preserving one B.O.B. identity and continuity.
 
+### Portable B.O.B. capabilities and harness adapters
+
+ADR-0006 accepts the direction that harness-neutral B.O.B. behavior should be portable behind B.O.B.-owned contracts while the Tauri desktop application remains a first-party host rather than the only possible host.
+
+The first proving target is a **B.O.B.-owned DeepSeek Harness adapter**, implemented entirely in this repository. The useful DeepSeek lesson is capability/service-definition separation and explicit lifecycle, not a wholesale dependency on Cordis or DeepSeek's current API shape. RFC-0004 remains Proposed while the exact portable slice, cross-language bridge, protocol versioning, and supported DeepSeek version range are proven.
+
+QOR Agent and GG-CORE are complementary integration targets/reference boundaries:
+
+- a QOR Agent adapter may translate portable B.O.B. behavior onto QOR's public model/tool/interceptor/session/observer/external-runtime seams without changing QOR Agent itself;
+- GG-CORE may satisfy B.O.B.'s inference/runtime port through its supported Rust or authenticated local IPC surface while B.O.B. retains state, policy, proposal, and tool authority;
+- Cloudflare remains one possible QOR host/proving implementation, not the definition of the QOR Agent harness.
+
+Sequence this work **after current alpha stabilization**, then extract only the minimum portable vertical slice required by the real second host. This is first-party composition, not authorization for a broad plugin marketplace.
+
 ### Bounded delegated work
 
 Potential future scope:
@@ -116,7 +130,7 @@ Potential later work must earn a PRD or governing Wayfinder destination, includi
 - cognitive profiling or diagnostic behavior;
 - broad plugin marketplaces;
 - cloud sync or multi-user state by implication;
-- mandatory dependency on Google, Anthropic, OpenAI, Ollama, LM Studio, or another provider client;
+- mandatory dependency on Google, Anthropic, OpenAI, Ollama, LM Studio, DeepSeek Harness, QOR Agent, GG-CORE, or another provider/runtime/harness client;
 - silent metered fallback;
 - decorative dashboard expansion that increases cognitive load without improving the primary workflow.
 
