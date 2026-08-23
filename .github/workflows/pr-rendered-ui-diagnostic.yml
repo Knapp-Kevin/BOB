@@ -66,16 +66,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          PROFILE_DIR="$RUNNER_TEMP/bob-render-chrome-profile"
+          rm -rf "$PROFILE_DIR"
+          mkdir -p "$PROFILE_DIR"
           "$CHROME_BIN" \
             --headless=new \
             --no-sandbox \
             --disable-gpu \
             --disable-dev-shm-usage \
+            --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-address=127.0.0.1 \
             --remote-debugging-port=9222 \
             about:blank > rendered-artifacts/chrome.log 2>&1 &
           echo $! > rendered-artifacts/chrome.pid
-          node scripts/rendered-ui-diagnostic.mjs
+          for attempt in {1..40}; do
+            if curl --fail --silent --show-error http://127.0.0.1:9222/json/version > /dev/null; then
+              node scripts/rendered-ui-diagnostic.mjs
+              exit $?
+            fi
+            sleep 0.25
+          done
+          cat rendered-artifacts/chrome.log >&2
+          exit 1
 
       - name: Upload rendered evidence
         if: always()
