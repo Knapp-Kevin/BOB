@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+// Hosted Vite/browser evidence only. Native Windows acceptance remains governed by docs/VALIDATION.md.
 const baseUrl = process.env.BOB_RENDER_BASE_URL ?? "http://127.0.0.1:4173";
 const debugPort = Number(process.env.BOB_CHROME_DEBUG_PORT ?? "9222");
 const outputDir = process.env.BOB_RENDER_OUTPUT_DIR ?? "rendered-artifacts";
