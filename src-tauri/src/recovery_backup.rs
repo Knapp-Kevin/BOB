@@ -56,8 +56,7 @@ pub fn cleanup_stale_validation_workspaces(app_data_dir: &Path) -> Result<()> {
         if metadata.file_type().is_symlink() || !metadata.file_type().is_dir() {
             bail!("stale recovery validation workspace is not a regular directory");
         }
-        fs::remove_dir_all(entry.path())
-            .context("remove stale recovery validation workspace")?;
+        fs::remove_dir_all(entry.path()).context("remove stale recovery validation workspace")?;
     }
 
     Ok(())
@@ -220,7 +219,9 @@ mod tests {
             let entry = entry?;
             let name = entry.file_name();
             assert!(
-                !name.to_string_lossy().starts_with(VALIDATION_WORKSPACE_PREFIX),
+                !name
+                    .to_string_lossy()
+                    .starts_with(VALIDATION_WORKSPACE_PREFIX),
                 "validation workspace should have been removed"
             );
         }
@@ -263,9 +264,7 @@ mod tests {
         let backup_dir = directory.path().join(USER_BACKUP_DIR);
         fs::create_dir_all(&backup_dir)?;
         fs::write(backup_dir.join("bob-backup-corrupt.sqlite3"), b"not sqlite")?;
-        assert!(
-            validate_recovery_backup(directory.path(), "bob-backup-corrupt.sqlite3").is_err()
-        );
+        assert!(validate_recovery_backup(directory.path(), "bob-backup-corrupt.sqlite3").is_err());
         assert_no_validation_workspaces(directory.path())?;
         Ok(())
     }
