@@ -20,11 +20,12 @@ pub fn run() {
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
 
-            // Recovery previews use app-owned isolated workspaces that can contain a temporary
-            // copy of user state. Remove stale candidate workspaces from interrupted prior runs
-            // before ordinary or recovery startup proceeds. Cleanup failure must not silently
-            // delete or rewrite canonical state, and it must not make deterministic startup fail.
-            let _ = recovery_backup::cleanup_stale_validation_workspaces(&data_dir);
+            // Do not globally reap recovery-validation/candidate-* workspaces at startup. Another
+            // B.O.B. process may still own one, and without a real cross-process ownership/liveness
+            // boundary we cannot safely distinguish stale duplicate state from an active preview.
+            // Each validation remains responsible for removing its own workspace before reporting
+            // success; interrupted-process artifacts are therefore preserved rather than deleted
+            // on an unproven ownership assumption.
 
             match state::Store::open(&data_dir).and_then(|store| {
                 work::normalize_store(&store)?;
