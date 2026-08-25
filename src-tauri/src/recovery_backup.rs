@@ -66,8 +66,10 @@ pub fn validate_recovery_backup(app_data_dir: &Path, candidate_id: &str) -> Resu
     let candidate = resolve_candidate(app_data_dir, candidate_id)?;
     let validation_root = app_data_dir.join(VALIDATION_ROOT);
     fs::create_dir_all(&validation_root).context("create recovery validation root")?;
-    cleanup_stale_validation_workspaces(app_data_dir)?;
 
+    // Stale workspace cleanup belongs to application startup, before any validation command can
+    // be active. Do not reap candidate-* directories here: recovery previews may overlap, and one
+    // validation must never delete another validation's live isolated workspace.
     let workspace =
         validation_root.join(format!("{VALIDATION_WORKSPACE_PREFIX}{}", unique_stamp()?));
     fs::create_dir(&workspace).context("create isolated recovery validation workspace")?;
@@ -243,6 +245,24 @@ mod tests {
         assert!(has_active);
         assert_eq!(fs::read(&canonical)?, original);
         assert_no_validation_workspaces(directory.path())?;
+        Ok(())
+    }
+
+    #[test]
+    fn validation_does_not_remove_another_active_candidate_workspace() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        create_managed_backup(directory.path(), "bob-backup-preview.sqlite3")?;
+
+        let validation_root = directory.path().join(VALIDATION_ROOT);
+        let active_workspace = validation_root.join("candidate-active");
+        fs::create_dir_all(&active_workspace)?;
+        let sentinel = active_workspace.join("in-use");
+        fs::write(&sentinel, b"another preview owns this workspace")?;
+
+        validate_recovery_backup(directory.path(), "bob-backup-preview.sqlite3")?;
+
+        assert!(active_workspace.exists());
+        assert_eq!(fs::read(&sentinel)?, b"another preview owns this workspace");
         Ok(())
     }
 
