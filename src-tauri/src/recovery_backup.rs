@@ -29,47 +29,14 @@ enum RecoveryBackupValidation {
     Unavailable,
 }
 
-pub fn cleanup_stale_validation_workspaces(app_data_dir: &Path) -> Result<()> {
-    let validation_root = app_data_dir.join(VALIDATION_ROOT);
-    if !validation_root.exists() {
-        return Ok(());
-    }
-
-    let root_metadata = fs::symlink_metadata(&validation_root)
-        .context("inspect recovery validation root before cleanup")?;
-    if root_metadata.file_type().is_symlink() || !root_metadata.file_type().is_dir() {
-        bail!("recovery validation root is not a regular directory");
-    }
-
-    for entry in fs::read_dir(&validation_root).context("read recovery validation root")? {
-        let entry = entry.context("read recovery validation workspace entry")?;
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        if !name.starts_with(VALIDATION_WORKSPACE_PREFIX) {
-            continue;
-        }
-
-        let metadata = fs::symlink_metadata(entry.path())
-            .context("inspect stale recovery validation workspace")?;
-        if metadata.file_type().is_symlink() || !metadata.file_type().is_dir() {
-            bail!("stale recovery validation workspace is not a regular directory");
-        }
-        fs::remove_dir_all(entry.path()).context("remove stale recovery validation workspace")?;
-    }
-
-    Ok(())
-}
-
 pub fn validate_recovery_backup(app_data_dir: &Path, candidate_id: &str) -> Result<(usize, bool)> {
     let candidate = resolve_candidate(app_data_dir, candidate_id)?;
     let validation_root = app_data_dir.join(VALIDATION_ROOT);
     fs::create_dir_all(&validation_root).context("create recovery validation root")?;
 
-    // Stale workspace cleanup belongs to application startup, before any validation command can
-    // be active. Do not reap candidate-* directories here: recovery previews may overlap, and one
-    // validation must never delete another validation's live isolated workspace.
+    // Do not reap candidate-* directories here: recovery previews may overlap, and one validation
+    // must never delete another validation's live isolated workspace. Interrupted-process artifacts
+    // are preserved until B.O.B. has a real cross-process ownership/liveness mechanism.
     let workspace =
         validation_root.join(format!("{VALIDATION_WORKSPACE_PREFIX}{}", unique_stamp()?));
     fs::create_dir(&workspace).context("create isolated recovery validation workspace")?;
@@ -286,23 +253,6 @@ mod tests {
         fs::write(backup_dir.join("bob-backup-corrupt.sqlite3"), b"not sqlite")?;
         assert!(validate_recovery_backup(directory.path(), "bob-backup-corrupt.sqlite3").is_err());
         assert_no_validation_workspaces(directory.path())?;
-        Ok(())
-    }
-
-    #[test]
-    fn removes_stale_candidate_workspaces_without_touching_other_entries() -> Result<()> {
-        let directory = tempfile::tempdir()?;
-        let validation_root = directory.path().join(VALIDATION_ROOT);
-        let stale = validation_root.join("candidate-stale");
-        let unrelated = validation_root.join("keep-me");
-        fs::create_dir_all(&stale)?;
-        fs::create_dir_all(&unrelated)?;
-        fs::write(stale.join("bob.sqlite3"), b"stale duplicate state")?;
-
-        cleanup_stale_validation_workspaces(directory.path())?;
-
-        assert!(!stale.exists());
-        assert!(unrelated.exists());
         Ok(())
     }
 }
