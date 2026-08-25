@@ -10,6 +10,7 @@ use tauri::{AppHandle, Manager};
 
 const USER_BACKUP_DIR: &str = "backups";
 const VALIDATION_ROOT: &str = "recovery-validation";
+const VALIDATION_WORKSPACE_PREFIX: &str = "candidate-";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,11 +29,49 @@ enum RecoveryBackupValidation {
     Unavailable,
 }
 
+pub fn cleanup_stale_validation_workspaces(app_data_dir: &Path) -> Result<()> {
+    let validation_root = app_data_dir.join(VALIDATION_ROOT);
+    if !validation_root.exists() {
+        return Ok(());
+    }
+
+    let root_metadata = fs::symlink_metadata(&validation_root)
+        .context("inspect recovery validation root before cleanup")?;
+    if root_metadata.file_type().is_symlink() || !root_metadata.file_type().is_dir() {
+        bail!("recovery validation root is not a regular directory");
+    }
+
+    for entry in fs::read_dir(&validation_root).context("read recovery validation root")? {
+        let entry = entry.context("read recovery validation workspace entry")?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.starts_with(VALIDATION_WORKSPACE_PREFIX) {
+            continue;
+        }
+
+        let metadata = fs::symlink_metadata(entry.path())
+            .context("inspect stale recovery validation workspace")?;
+        if metadata.file_type().is_symlink() || !metadata.file_type().is_dir() {
+            bail!("stale recovery validation workspace is not a regular directory");
+        }
+        fs::remove_dir_all(entry.path()).context("remove stale recovery validation workspace")?;
+    }
+
+    Ok(())
+}
+
 pub fn validate_recovery_backup(app_data_dir: &Path, candidate_id: &str) -> Result<(usize, bool)> {
     let candidate = resolve_candidate(app_data_dir, candidate_id)?;
     let validation_root = app_data_dir.join(VALIDATION_ROOT);
     fs::create_dir_all(&validation_root).context("create recovery validation root")?;
-    let workspace = validation_root.join(format!("candidate-{}", unique_stamp()?));
+    cleanup_stale_validation_workspaces(app_data_dir)?;
+
+    let workspace = validation_root.join(format!(
+        "{VALIDATION_WORKSPACE_PREFIX}{}",
+        unique_stamp()?
+    ));
     fs::create_dir(&workspace).context("create isolated recovery validation workspace")?;
 
     let result = (|| {
@@ -52,8 +91,16 @@ pub fn validate_recovery_backup(app_data_dir: &Path, candidate_id: &str) -> Resu
         Ok((state.items.len(), state.active_id.is_some()))
     })();
 
-    let _ = fs::remove_dir_all(&workspace);
-    result
+    let cleanup_result =
+        fs::remove_dir_all(&workspace).context("remove recovery validation workspace");
+    match (result, cleanup_result) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Ok(_), Err(cleanup_error)) => Err(cleanup_error),
+        (Err(validation_error), Ok(())) => Err(validation_error),
+        (Err(validation_error), Err(cleanup_error)) => Err(validation_error.context(format!(
+            "recovery validation workspace cleanup also failed: {cleanup_error:#}"
+        ))),
+    }
 }
 
 fn resolve_candidate(app_data_dir: &Path, candidate_id: &str) -> Result<PathBuf> {
@@ -165,6 +212,22 @@ mod tests {
         Ok(candidate)
     }
 
+    fn assert_no_validation_workspaces(app_data_dir: &Path) -> Result<()> {
+        let validation_root = app_data_dir.join(VALIDATION_ROOT);
+        if !validation_root.exists() {
+            return Ok(());
+        }
+        for entry in fs::read_dir(validation_root)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            assert!(
+                !name.to_string_lossy().starts_with(VALIDATION_WORKSPACE_PREFIX),
+                "validation workspace should have been removed"
+            );
+        }
+        Ok(())
+    }
+
     #[test]
     fn previews_managed_backup_without_touching_corrupt_canonical_bytes() -> Result<()> {
         let directory = tempfile::tempdir()?;
@@ -179,6 +242,7 @@ mod tests {
         assert_eq!(count, 1);
         assert!(has_active);
         assert_eq!(fs::read(&canonical)?, original);
+        assert_no_validation_workspaces(directory.path())?;
         Ok(())
     }
 
@@ -195,12 +259,30 @@ mod tests {
     }
 
     #[test]
-    fn corrupt_candidate_fails_closed() -> Result<()> {
+    fn corrupt_candidate_fails_closed_and_removes_workspace() -> Result<()> {
         let directory = tempfile::tempdir()?;
         let backup_dir = directory.path().join(USER_BACKUP_DIR);
         fs::create_dir_all(&backup_dir)?;
         fs::write(backup_dir.join("bob-backup-corrupt.sqlite3"), b"not sqlite")?;
         assert!(validate_recovery_backup(directory.path(), "bob-backup-corrupt.sqlite3").is_err());
+        assert_no_validation_workspaces(directory.path())?;
+        Ok(())
+    }
+
+    #[test]
+    fn removes_stale_candidate_workspaces_without_touching_other_entries() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let validation_root = directory.path().join(VALIDATION_ROOT);
+        let stale = validation_root.join("candidate-stale");
+        let unrelated = validation_root.join("keep-me");
+        fs::create_dir_all(&stale)?;
+        fs::create_dir_all(&unrelated)?;
+        fs::write(stale.join("bob.sqlite3"), b"stale duplicate state")?;
+
+        cleanup_stale_validation_workspaces(directory.path())?;
+
+        assert!(!stale.exists());
+        assert!(unrelated.exists());
         Ok(())
     }
 }
