@@ -1,19 +1,10 @@
+use crate::recovery_backup::is_managed_backup_candidate_id;
 use serde::Serialize;
 use std::{fs, io::ErrorKind, path::Path, time::UNIX_EPOCH};
 use tauri::{AppHandle, State};
 
 const USER_BACKUP_DIR: &str = "backups";
 const MAX_RECOVERY_BACKUP_CANDIDATES: usize = 8;
-
-fn is_managed_backup_candidate_id(candidate_id: &str) -> bool {
-    candidate_id.starts_with("bob-backup-")
-        && candidate_id.ends_with(".sqlite3")
-        && !candidate_id.contains('/')
-        && !candidate_id.contains('\\')
-        && candidate_id.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
-        })
-}
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -171,17 +162,13 @@ mod tests {
     }
 
     #[test]
-    fn recovery_status_bounds_rendered_candidates_without_hiding_total_count() -> anyhow::Result<()>
-    {
+    fn recovery_status_bounds_rendered_candidates_without_hiding_total_count() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let backups = directory.path().join(USER_BACKUP_DIR);
         fs::create_dir_all(&backups)?;
         let total = MAX_RECOVERY_BACKUP_CANDIDATES + 4;
         for index in 0..total {
-            fs::write(
-                backups.join(format!("bob-backup-{index}.sqlite3")),
-                b"backup",
-            )?;
+            fs::write(backups.join(format!("bob-backup-{index}.sqlite3")), b"backup")?;
         }
 
         let state = StartupState::recovery_required(directory.path());
@@ -198,16 +185,12 @@ mod tests {
         let directory = tempfile::tempdir()?;
         let state = StartupState::recovery_required(directory.path());
         assert_eq!(state.0.managed_backup_count, Some(0));
-        assert_eq!(
-            state.0.managed_backup_candidates.as_ref().map(Vec::len),
-            Some(0)
-        );
+        assert_eq!(state.0.managed_backup_candidates.as_ref().map(Vec::len), Some(0));
         Ok(())
     }
 
     #[test]
-    fn recovery_status_reports_unknown_when_backup_directory_cannot_be_read() -> anyhow::Result<()>
-    {
+    fn recovery_status_reports_unknown_when_backup_directory_cannot_be_read() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         fs::write(directory.path().join(USER_BACKUP_DIR), b"not a directory")?;
 
@@ -226,10 +209,7 @@ mod tests {
         let external = tempfile::tempdir()?;
         let external_backups = external.path().join(USER_BACKUP_DIR);
         fs::create_dir_all(&external_backups)?;
-        fs::write(
-            external_backups.join("bob-backup-external.sqlite3"),
-            b"external",
-        )?;
+        fs::write(external_backups.join("bob-backup-external.sqlite3"), b"external")?;
         symlink(&external_backups, directory.path().join(USER_BACKUP_DIR))?;
 
         let state = StartupState::recovery_required(directory.path());
