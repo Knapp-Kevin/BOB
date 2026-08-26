@@ -264,11 +264,9 @@ mod tests {
             directory.path().join(USER_BACKUP_DIR),
         )?;
 
-        assert!(validate_recovery_backup(
-            directory.path(),
-            "bob-backup-external.sqlite3"
-        )
-        .is_err());
+        assert!(
+            validate_recovery_backup(directory.path(), "bob-backup-external.sqlite3").is_err()
+        );
         Ok(())
     }
 
