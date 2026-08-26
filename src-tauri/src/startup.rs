@@ -5,6 +5,16 @@ use tauri::{AppHandle, State};
 const USER_BACKUP_DIR: &str = "backups";
 const MAX_RECOVERY_BACKUP_CANDIDATES: usize = 8;
 
+fn is_managed_backup_candidate_id(candidate_id: &str) -> bool {
+    candidate_id.starts_with("bob-backup-")
+        && candidate_id.ends_with(".sqlite3")
+        && !candidate_id.contains('/')
+        && !candidate_id.contains('\\')
+        && candidate_id.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedBackupCandidate {
@@ -83,7 +93,7 @@ fn managed_backup_candidates(app_data_dir: &Path) -> Option<Vec<ManagedBackupCan
         let Some(name) = name.to_str() else {
             continue;
         };
-        if !name.starts_with("bob-backup-") || !name.ends_with(".sqlite3") {
+        if !is_managed_backup_candidate_id(name) {
             continue;
         }
 
@@ -136,6 +146,7 @@ mod tests {
         fs::create_dir_all(&backups)?;
         fs::write(backups.join("bob-backup-1.sqlite3"), b"one")?;
         fs::write(backups.join("bob-backup-2.sqlite3"), b"two-two")?;
+        fs::write(backups.join("bob-backup-not managed.sqlite3"), b"ignore")?;
         fs::write(backups.join("notes.txt"), b"ignore")?;
         fs::create_dir(backups.join("bob-backup-directory.sqlite3"))?;
 
