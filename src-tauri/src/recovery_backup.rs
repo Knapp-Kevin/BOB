@@ -89,8 +89,14 @@ fn resolve_candidate(app_data_dir: &Path, candidate_id: &str) -> Result<PathBuf>
         bail!("managed backup candidate is not a regular file");
     }
 
+    let canonical_app_data_dir =
+        fs::canonicalize(app_data_dir).context("resolve application data directory")?;
     let canonical_backup_dir =
         fs::canonicalize(&backup_dir).context("resolve managed backup directory")?;
+    if canonical_backup_dir != canonical_app_data_dir.join(USER_BACKUP_DIR) {
+        bail!("managed backup directory escaped the application data boundary");
+    }
+
     let canonical_candidate =
         fs::canonicalize(&candidate).context("resolve managed backup candidate")?;
     if canonical_candidate.parent() != Some(canonical_backup_dir.as_path()) {
@@ -242,6 +248,27 @@ mod tests {
         assert!(
             validate_recovery_backup(directory.path(), "../bob-backup-escape.sqlite3").is_err()
         );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_redirected_managed_backup_directory() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir()?;
+        let external = tempfile::tempdir()?;
+        create_managed_backup(external.path(), "bob-backup-external.sqlite3")?;
+        symlink(
+            external.path().join(USER_BACKUP_DIR),
+            directory.path().join(USER_BACKUP_DIR),
+        )?;
+
+        assert!(validate_recovery_backup(
+            directory.path(),
+            "bob-backup-external.sqlite3"
+        )
+        .is_err());
         Ok(())
     }
 
