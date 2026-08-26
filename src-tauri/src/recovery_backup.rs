@@ -12,6 +12,16 @@ const USER_BACKUP_DIR: &str = "backups";
 const VALIDATION_ROOT: &str = "recovery-validation";
 const VALIDATION_WORKSPACE_PREFIX: &str = "candidate-";
 
+pub(crate) fn is_managed_backup_candidate_id(candidate_id: &str) -> bool {
+    candidate_id.starts_with("bob-backup-")
+        && candidate_id.ends_with(".sqlite3")
+        && !candidate_id.contains('/')
+        && !candidate_id.contains('\\')
+        && candidate_id.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecoveryBackupPreview {
@@ -79,14 +89,7 @@ pub fn validate_recovery_backup(app_data_dir: &Path, candidate_id: &str) -> Resu
 }
 
 fn resolve_candidate(app_data_dir: &Path, candidate_id: &str) -> Result<PathBuf> {
-    if !candidate_id.starts_with("bob-backup-")
-        || !candidate_id.ends_with(".sqlite3")
-        || candidate_id.contains('/')
-        || candidate_id.contains('\\')
-        || candidate_id.chars().any(|character| {
-            !(character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.'))
-        })
-    {
+    if !is_managed_backup_candidate_id(candidate_id) {
         bail!("invalid managed backup candidate id");
     }
 
