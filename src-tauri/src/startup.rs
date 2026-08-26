@@ -56,12 +56,17 @@ impl StartupState {
 
 fn managed_backup_candidates(app_data_dir: &Path) -> Option<Vec<ManagedBackupCandidate>> {
     let backup_dir = app_data_dir.join(USER_BACKUP_DIR);
-    let entries = match fs::read_dir(backup_dir) {
-        Ok(entries) => entries,
+    let canonical_app_data_dir = fs::canonicalize(app_data_dir).ok()?;
+    let canonical_backup_dir = match fs::canonicalize(&backup_dir) {
+        Ok(path) => path,
         Err(error) if error.kind() == ErrorKind::NotFound => return Some(Vec::new()),
         Err(_) => return None,
     };
+    if canonical_backup_dir != canonical_app_data_dir.join(USER_BACKUP_DIR) {
+        return None;
+    }
 
+    let entries = fs::read_dir(&canonical_backup_dir).ok()?;
     let mut candidates = Vec::new();
     for entry in entries {
         let Ok(entry) = entry else {
@@ -194,6 +199,27 @@ mod tests {
     {
         let directory = tempfile::tempdir()?;
         fs::write(directory.path().join(USER_BACKUP_DIR), b"not a directory")?;
+
+        let state = StartupState::recovery_required(directory.path());
+        assert_eq!(state.0.managed_backup_count, None);
+        assert!(state.0.managed_backup_candidates.is_none());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_status_rejects_redirected_managed_backup_directory() -> anyhow::Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir()?;
+        let external = tempfile::tempdir()?;
+        let external_backups = external.path().join(USER_BACKUP_DIR);
+        fs::create_dir_all(&external_backups)?;
+        fs::write(
+            external_backups.join("bob-backup-external.sqlite3"),
+            b"external",
+        )?;
+        symlink(&external_backups, directory.path().join(USER_BACKUP_DIR))?;
 
         let state = StartupState::recovery_required(directory.path());
         assert_eq!(state.0.managed_backup_count, None);
