@@ -34,11 +34,19 @@ pub fn validate_recovery_backup(app_data_dir: &Path, candidate_id: &str) -> Resu
     let validation_root = app_data_dir.join(VALIDATION_ROOT);
     fs::create_dir_all(&validation_root).context("create recovery validation root")?;
 
+    let canonical_app_data_dir =
+        fs::canonicalize(app_data_dir).context("resolve application data directory")?;
+    let canonical_validation_root =
+        fs::canonicalize(&validation_root).context("resolve recovery validation root")?;
+    if canonical_validation_root != canonical_app_data_dir.join(VALIDATION_ROOT) {
+        bail!("recovery validation root escaped the application data boundary");
+    }
+
     // Do not reap candidate-* directories here: recovery previews may overlap, and one validation
     // must never delete another validation's live isolated workspace. Interrupted-process artifacts
     // are preserved until B.O.B. has a real cross-process ownership/liveness mechanism.
     let workspace =
-        validation_root.join(format!("{VALIDATION_WORKSPACE_PREFIX}{}", unique_stamp()?));
+        canonical_validation_root.join(format!("{VALIDATION_WORKSPACE_PREFIX}{}", unique_stamp()?));
     fs::create_dir(&workspace).context("create isolated recovery validation workspace")?;
 
     let result = (|| {
@@ -265,6 +273,21 @@ mod tests {
         )?;
 
         assert!(validate_recovery_backup(directory.path(), "bob-backup-external.sqlite3").is_err());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_redirected_recovery_validation_root() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir()?;
+        let external = tempfile::tempdir()?;
+        create_managed_backup(directory.path(), "bob-backup-preview.sqlite3")?;
+        symlink(external.path(), directory.path().join(VALIDATION_ROOT))?;
+
+        assert!(validate_recovery_backup(directory.path(), "bob-backup-preview.sqlite3").is_err());
+        assert_eq!(fs::read_dir(external.path())?.count(), 0);
         Ok(())
     }
 
