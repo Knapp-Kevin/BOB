@@ -25,7 +25,7 @@ function Get-RepoHead {
 
 function Get-NormalizedPath([string]$Path) {
   if (-not $Path) { return '' }
-  return [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
+  return [System.IO.Path]::GetFullPath($Path).TrimEnd('\\')
 }
 
 function Get-RepoRoot {
@@ -84,7 +84,7 @@ function Assert-AcceptancePlatform([object]$Platform) {
 }
 
 function Get-WindowsHostIdentity {
-  $machineGuid = Get-ItemPropertyValue -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Cryptography' -Name MachineGuid
+  $machineGuid = Get-ItemPropertyValue -LiteralPath 'HKLM:\\SOFTWARE\\Microsoft\\Cryptography' -Name MachineGuid
   if (-not $machineGuid) {
     throw 'Unable to resolve the local Windows host identity. Native smoke evidence cannot safely continue across phases.'
   }
@@ -100,7 +100,7 @@ function Get-WindowsHostIdentity {
 }
 
 function Get-Installer {
-  $installers = @(Get-ChildItem '.\src-tauri\target\release\bundle\nsis\*.exe' -File -ErrorAction SilentlyContinue)
+  $installers = @(Get-ChildItem '.\\src-tauri\\target\\release\\bundle\\nsis\\*.exe' -File -ErrorAction SilentlyContinue)
   if ($installers.Count -ne 1) {
     throw "Expected exactly one NSIS installer, found $($installers.Count). The package phase must produce one unambiguous installer."
   }
@@ -108,20 +108,20 @@ function Get-Installer {
 }
 
 function Get-PackagedExecutable {
-  $executablePath = '.\src-tauri\target\release\bob.exe'
+  $executablePath = '.\\src-tauri\\target\\release\\bob.exe'
   if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
-    throw 'The package build did not leave the expected src-tauri\target\release\bob.exe payload available for provenance binding.'
+    throw 'The package build did not leave the expected src-tauri\\target\\release\\bob.exe payload available for provenance binding.'
   }
   return Get-Item -LiteralPath $executablePath
 }
 
 function Get-TauriConfig {
-  $configPath = '.\src-tauri\tauri.conf.json'
+  $configPath = '.\\src-tauri\\tauri.conf.json'
   if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
-    throw 'Unable to find src-tauri\tauri.conf.json. Run this script from the B.O.B. repository root.'
+    throw 'Unable to find src-tauri\\tauri.conf.json. Run this script from the B.O.B. repository root.'
   }
 
-  $windowsConfigPath = '.\src-tauri\tauri.windows.conf.json'
+  $windowsConfigPath = '.\\src-tauri\\tauri.windows.conf.json'
   if (Test-Path -LiteralPath $windowsConfigPath -PathType Leaf) {
     throw 'A platform-specific Tauri Windows config is present. Reconcile the effective NSIS install target before using this acceptance helper.'
   }
@@ -137,7 +137,7 @@ function Get-CanonicalStatePath {
   $config = Get-TauriConfig
   $identifier = $config.identifier
   if (-not $identifier) {
-    throw 'Tauri bundle identifier is missing from src-tauri\tauri.conf.json.'
+    throw 'Tauri bundle identifier is missing from src-tauri\\tauri.conf.json.'
   }
 
   return Join-Path (Join-Path $env:APPDATA $identifier) 'bob.sqlite3'
@@ -178,6 +178,34 @@ function Assert-NoReparsePointPath([string]$CandidatePath, [string]$Label) {
     $parentPath = $parent.FullName
     if ($parentPath.Equals($currentPath, [System.StringComparison]::OrdinalIgnoreCase)) { break }
     $currentPath = $parentPath
+  }
+}
+
+function Assert-NoReparsePointBelowTrustedRoot([string]$CandidatePath, [string]$TrustedRoot, [string]$Label) {
+  if (-not $CandidatePath -or -not $TrustedRoot) {
+    throw "$Label and its trusted root must resolve to concrete paths."
+  }
+
+  $candidate = [System.IO.Path]::GetFullPath($CandidatePath)
+  $root = [System.IO.Path]::GetFullPath($TrustedRoot)
+  if (-not (Test-PathAtOrBelow $candidate $root)) {
+    throw "$Label must remain beneath its expected Windows profile root."
+  }
+
+  $currentPath = $candidate
+  while (-not (Test-SamePath $currentPath $root)) {
+    if (Test-Path -LiteralPath $currentPath) {
+      $item = Get-Item -LiteralPath $currentPath -Force
+      if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "$Label must not traverse a Windows reparse point below the trusted profile root. Use a clean disposable Windows profile with an ordinary B.O.B. application-data target."
+      }
+    }
+
+    $parent = [System.IO.Directory]::GetParent($currentPath)
+    if ($null -eq $parent) {
+      throw "$Label could not be walked back to its expected Windows profile root."
+    }
+    $currentPath = $parent.FullName
   }
 }
 
@@ -224,7 +252,7 @@ function Get-DefaultNsisInstallPath {
 
   $config = Get-TauriConfig
   if (-not $config.productName) {
-    throw 'Tauri productName is missing from src-tauri\tauri.conf.json.'
+    throw 'Tauri productName is missing from src-tauri\\tauri.conf.json.'
   }
 
   $nsis = $null
@@ -247,7 +275,7 @@ function Get-DefaultNsisInstallPath {
     throw "Native first-alpha acceptance requires Tauri NSIS currentUser mode. Observed installMode '$installMode'."
   }
 
-  $normalizedProductName = ($config.productName.ToString() -replace '[\. ]+$', '')
+  $normalizedProductName = ($config.productName.ToString() -replace '[\\. ]+$', '')
   if (-not $normalizedProductName) {
     throw 'Tauri productName becomes empty after Windows trailing-period/space normalization.'
   }
@@ -265,12 +293,12 @@ function ConvertTo-EvidencePath([string]$Path) {
   ) | Where-Object { $_.Value } | Sort-Object { $_.Value.Length } -Descending
 
   foreach ($root in $roots) {
-    $normalizedRoot = $root.Value.TrimEnd('\')
+    $normalizedRoot = $root.Value.TrimEnd('\\')
     if ($Path.Equals($normalizedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
       return $root.Label
     }
 
-    $prefix = $normalizedRoot + '\'
+    $prefix = $normalizedRoot + '\\'
     if ($Path.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
       return $root.Label + $Path.Substring($normalizedRoot.Length)
     }
@@ -281,7 +309,7 @@ function ConvertTo-EvidencePath([string]$Path) {
 
 function Escape-Cell([object]$Value) {
   if ($null -eq $Value) { return '' }
-  $escaped = $Value.ToString().Replace('|', '\|')
+  $escaped = $Value.ToString().Replace('|', '\\|')
   return $escaped -replace "`r?`n", ' '
 }
 
@@ -544,6 +572,7 @@ $windowsArchitecture = $windowsPlatform.Architecture
 $hostIdentity = Get-WindowsHostIdentity
 $timestamp = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 $canonicalStatePath = Get-CanonicalStatePath
+Assert-NoReparsePointBelowTrustedRoot $canonicalStatePath $env:APPDATA 'The canonical B.O.B. application-data target'
 $defaultInstallPath = Get-DefaultNsisInstallPath
 Assert-AcceptanceTargetSinks $normalizedEvidencePath $normalizedSessionPath $canonicalStatePath $defaultInstallPath
 
