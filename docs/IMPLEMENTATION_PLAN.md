@@ -1,13 +1,14 @@
 # Current Implementation Plan
 
 **Status:** Active sequencing context  
-**Objective:** Advance B.O.B. from the current landed local-first desktop baseline through truthful first-alpha acceptance, then continue into the next already-authorized runtime and portability frontiers without speculative widening.
+**Product stage:** **Alpha Product**  
+**Objective:** Qualify the current landed Alpha Product through truthful native Windows recovery, packaging, and convergence evidence, then continue into the next already-authorized runtime and portability frontiers without speculative widening.
 
 ## Strategy
 
 The revival architecture is no longer hypothetical. `master` contains the Tauri 2 + Rust application foundation, Rust-owned SQLite state, Today/Inbox/Chat/Settings, deterministic planning, B.O.B. Assist/proposal validation, protected credentials, recovery/export foundations, accessibility preferences, provider-independent runtime policy, an advanced optional Gemini API adapter, a bounded Ollama tracer, locked Windows packaging, and hosted rendered diagnostics.
 
-Implementation follows the live Wayfinder **build frontier**, not a pre-build phase gate. Consequential unresolved decisions block only work that depends on them. Safe disjoint implementation, review, validation, security/privacy hardening, packaging/readiness work, documentation reconciliation, and blocker removal should continue.
+B.O.B. is now classified as an **Alpha Product**. The remaining native Windows work is alpha release qualification, not pre-alpha feature construction. Implementation follows the live Wayfinder **build frontier**, not a pre-build phase gate. Consequential unresolved decisions block only work that depends on them. Safe disjoint implementation, review, validation, security/privacy hardening, packaging/readiness work, documentation reconciliation, and blocker removal should continue.
 
 Architectural invariant:
 
@@ -17,7 +18,7 @@ ADR-0006 additionally permits genuinely harness-neutral B.O.B. capabilities to b
 
 ## Governing maps
 
-- **#30:** first runnable B.O.B. alpha waypoint and current executable-readiness owner;
+- **#30:** alpha qualification waypoint and current executable-readiness owner;
 - **#79:** provider-independent inference and account onboarding;
 - **#86:** calm primary workflow and progressive disclosure, **completed** after Settings, Today, Inbox, and Chat convergence landed with rendered evidence.
 
@@ -41,7 +42,7 @@ Current `master` includes, at minimum:
 
 These are current implementation surfaces, not future phases.
 
-## Active first-alpha build frontier
+## Active alpha qualification frontier
 
 ### 1. Finish startup recovery acceptance
 
@@ -69,23 +70,23 @@ Draft PR #115 owns only the separate native-smoke evidence helper/runbook. It ma
 
 Close #84 only after the native acceptance contract in `docs/WINDOWS_NSIS_SMOKE.md` is actually executed and recorded, including default install path, launch, canonical-state location, state survival across full quit/relaunch, packaged/installed executable identity, embedded icon identity, uninstall, stopped process, retained user data, and truthful uninstall messaging.
 
-### 3. Run the first-alpha convergence checkpoint
+### 3. Run the alpha qualification convergence checkpoint
 
-After #103 and #84 receive truthful terminal dispositions, run a fresh exact-state convergence audit against Wayfinder #30 and the accepted first-alpha success criteria.
+After #103 and #84 receive truthful terminal dispositions, run a fresh exact-state convergence audit against Wayfinder #30 and the accepted alpha qualification criteria.
 
 The checkpoint must answer:
 
-- whether the first runnable alpha is genuinely evidenced rather than merely implemented;
+- whether the current Alpha Product is genuinely native-qualified rather than merely implemented;
 - whether any native credential/provider/restart evidence remains unowned;
 - whether README, roadmap, validation, traceability, and current issue/PR state agree with the executable product;
 - whether any in-scope consequential uncertainty would force the next implementation agent to invent policy;
 - whether the correct next frontier is provider promotion, a newly exposed defect, or another already-authorized readiness action.
 
-Do not call the alpha complete from merged-PR count or hosted CI alone.
+Do not call the integrated alpha build release-qualified from merged-PR count or hosted CI alone.
 
 ### 4. Promote one already-authorized inference path with native evidence
 
-Only after the first-alpha readiness/convergence frontier is reconciled should Wayfinder #79 become the primary build frontier again.
+Only after the alpha qualification/convergence frontier is reconciled should Wayfinder #79 become the primary build frontier again.
 
 Current provider/runtime rules:
 
@@ -113,7 +114,7 @@ Future presentation defects should receive new bounded owners rather than reopen
 
 ADR-0006 and completed design-intent issue #109 establish the future **portable capability core + first-party host adapters** direction. Proposed RFC-0004 owns unresolved implementation choices.
 
-Substantial portability implementation begins only after first-alpha stabilization/convergence and RFC-0004 acceptance.
+Substantial portability implementation begins only after alpha stabilization/convergence and RFC-0004 acceptance.
 
 Expected bounded sequence:
 
@@ -164,6 +165,6 @@ Do not keep obsolete runtime implementations in the active tree for sentimental 
 
 ## Validation ownership
 
-`docs/VALIDATION.md` is the accepted Windows-first evidence contract. Implementing agents own truthful exact-head validation. Missing tooling or unavailable native/provider environments are explicit remaining debt, not passing evidence.
+`docs/VALIDATION.md` is the accepted Windows-first alpha qualification evidence contract. Implementing agents own truthful exact-head validation. Missing tooling or unavailable native/provider environments are explicit remaining debt, not passing evidence.
 
 Repository CI remains deliberately small unless a stronger gate is justified by demonstrated risk.
