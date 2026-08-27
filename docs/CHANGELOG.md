@@ -4,34 +4,84 @@ All notable changes to the revived B.O.B. project are recorded here. This file d
 
 ## Unreleased
 
+### Runnable local-first desktop foundation
+
+- implemented the Tauri 2 desktop host with a Rust privileged core and framework-free TypeScript/Vite frontend;
+- implemented Rust-owned SQLite canonical state with monotonic migrations and transactional mutation boundaries;
+- implemented Today and Inbox work surfaces, quick capture, task lifecycle, deterministic planning/replanning, and restart handoff continuity;
+- implemented B.O.B. Assist with typed proposal validation and preview-before-apply for important state changes;
+- implemented persisted accessibility/preferences behavior through the Rust-owned state boundary;
+- implemented managed backup/restore foundations and versioned non-secret portable export;
+- implemented protected credential handling through the OS-backed secret-store boundary, using Windows Credential Manager on the Windows-first path.
+
+### Inference and provider independence
+
+- used Gemini Developer API Free as the first working inference/credential/privacy/cost tracer while retaining it as an advanced optional adapter rather than the B.O.B. product identity;
+- established the accepted provider-independent runtime/auth/billing/locality contract in RFC-0002;
+- rejected the original fixed subscription-first ordering from ADR-0003 and reconciled PRD-0003 to current provider-independent policy;
+- implemented Rust-owned fail-closed runtime policy;
+- implemented a bounded non-user-facing Ollama tracer behind the runtime contract;
+- resolved the current account-backed-provider research boundary and the B.O.B.-owned `LocalRuntimeAdapter` direction through Wayfinder #79/#80/#81;
+- preserved deterministic B.O.B. operation with no inference configured and no silent paid/provider/model fallback.
+
+### Calm primary workflow
+
+- converged ordinary Settings through PR #89, removing persistent provider-specific status and development-governance exposition from normal product chrome while retaining Gemini as an advanced optional capability;
+- converged Today hierarchy/density through issue #87 / PR #93;
+- converged Inbox and B.O.B. Chat density/conversation-workspace behavior through issue #88 / PR #106;
+- completed Wayfinder #86 for the calm primary workflow and progressive-disclosure direction;
+- added hosted rendered diagnostics at normal/minimum supported sizes, including reduced-information mode, larger text, reduced motion, keyboard focus, and bounded advanced-provider setup presentation.
+
+### Validation and Windows packaging
+
+- committed deterministic npm and Cargo lockfiles and moved validation to locked dependency resolution;
+- added path-scoped frontend and Windows Rust diagnostics rather than a broad expensive CI matrix;
+- added the hosted rendered-UI diagnostic and hardened Chrome startup for repeatable presentation evidence;
+- established the accepted targeted-clean Windows NSIS packaging path to prevent stale native resource reuse;
+- produced reproducible hosted Windows package-build evidence while explicitly keeping native install acceptance separate;
+- retained issue #84 for the real Windows 11 x64 install/launch/relaunch/icon/uninstall/retained-user-data acceptance contract;
+- added draft PR #115 as separate native-smoke evidence tooling/runbook without representing that tooling as completed native acceptance.
+
+### Startup recovery
+
+- implemented the bounded fail-closed startup-recovery surface in draft PR #103;
+- preserve unreadable/corrupt canonical state rather than silently resetting or deleting it;
+- restrict recovery to B.O.B.-managed backup candidates and bounded recovery-validation staging;
+- provide governed candidate preview, truthful bounded-list disclosure, safe failure states, and a real application-process retry/restart path;
+- added hosted rendered recovery-state coverage while retaining native Windows filesystem/lifecycle/accessibility behavior as outstanding acceptance debt under issue #85.
+
+### Architecture and future portability
+
+- accepted ADR-0006 for a future portable B.O.B. capability core with first-party host adapters while preserving standalone B.O.B. identity, state, and authority ownership;
+- completed design-intent issue #109 and moved unresolved portability implementation choices to Proposed RFC-0004;
+- sequenced substantial portability/DeepSeek-harness work after first-alpha stabilization and convergence rather than ahead of executable readiness.
+
 ### Public open-source baseline
 
-- repository made public;
-- adopted the MIT License;
-- added B.O.B. hero artwork and truthful status/design badges to the README;
-- updated contribution, security, and documentation language for the public repository;
-- documented intentionally minimal GitHub Actions usage and developer-agent-owned validation;
-- converted the pre-public release gate into a lightweight public-maintenance checklist.
+- made the repository public and adopted the MIT License;
+- added B.O.B. hero artwork, application/mascot asset roles, and public-facing status/design badges;
+- added contribution, security, support, code-of-conduct, issue, and pull-request guidance;
+- documented intentionally minimal GitHub Actions usage and developer/coding-agent-owned validation;
+- added public repository maintenance and private-vulnerability-reporting guidance.
 
-### Public repository readiness
+### Repository reset and historical preservation
 
-- added a community code of conduct and support-routing policy;
-- hardened issue intake against accidental public disclosure of credentials, private data, and vulnerability details;
-- documented private vulnerability reporting as the preferred security-reporting path;
-- added repository-history and third-party-asset review guidance.
-
-### Repository reset
-
-- established B.O.B. as Better Organized Brain, a vendor-neutral personal AI workbench;
-- established the Today, Inbox, B.O.B. Chat, and Settings product surfaces;
-- documented B.O.B.-owned canonical state and multi-agent bridge boundaries;
-- documented subscription-first inference cost policy and explicit metered opt-in;
-- documented Assist versus Delegate authority;
-- added PRDs, RFCs, ADRs, governance, security, contribution, design, roadmap, and traceability documentation;
+- established B.O.B. as Better Organized Brain, a single-agent local-first personal AI workbench;
 - retired the Electron/Ollama/RAG-era implementation from the active tree;
-- removed the legacy npm dependency graph, generated directory inventory, duplicate scripts, checked-in embedding model, Python skeleton, historical version directories, and other prototype artifacts from `master`;
+- removed the legacy dependency graph, duplicate scripts, checked-in embedding model, Python skeleton, historical version directories, generated inventories, and other prototype artifacts from `master`;
 - preserved the complete pre-cleanup tree on `archive/pre-revival-cleanup-2026-08-19`;
-- closed obsolete Dependabot pull requests targeting the retired dependency graph.
+- retained generated pre-alpha inspiration/prototype artifacts as explicitly non-authoritative historical/reference material.
+
+## Current first-alpha frontier
+
+The current executable-readiness sequence is:
+
+1. native Windows startup-recovery acceptance for issue #85 / draft PR #103;
+2. native Windows NSIS lifecycle acceptance for issue #84 / draft PR #115;
+3. Wayfinder #30 convergence audit against the full first-alpha success criteria;
+4. after truthful convergence, promote one already-authorized inference path with native evidence.
+
+B.O.B. remains labeled **pre-alpha** until those first-alpha acceptance obligations are satisfied. Hosted CI, source review, or package creation alone are not represented as native/product acceptance.
 
 ## Legacy alpha history
 
