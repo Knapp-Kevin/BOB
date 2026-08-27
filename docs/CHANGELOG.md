@@ -4,6 +4,13 @@ All notable changes to the revived B.O.B. project are recorded here. This file d
 
 ## Unreleased
 
+### Product-stage classification
+
+- classified B.O.B. as an **Alpha Product** based on the current implemented desktop product baseline;
+- replaced active `pre-alpha` product-stage language in canonical documentation with `Alpha Product`;
+- retained native Windows startup-recovery, NSIS lifecycle, and convergence work as **alpha release qualification debt**, not as a reason to revert the product-stage classification;
+- retained `docs/pre-alpha/` and related references only as historical/prototype provenance.
+
 ### Runnable local-first desktop foundation
 
 - implemented the Tauri 2 desktop host with a Rust privileged core and framework-free TypeScript/Vite frontend;
@@ -54,7 +61,7 @@ All notable changes to the revived B.O.B. project are recorded here. This file d
 
 - accepted ADR-0006 for a future portable B.O.B. capability core with first-party host adapters while preserving standalone B.O.B. identity, state, and authority ownership;
 - completed design-intent issue #109 and moved unresolved portability implementation choices to Proposed RFC-0004;
-- sequenced substantial portability/DeepSeek-harness work after first-alpha stabilization and convergence rather than ahead of executable readiness.
+- sequenced substantial portability/DeepSeek-harness work after alpha stabilization and convergence rather than ahead of executable readiness.
 
 ### Public open-source baseline
 
@@ -72,16 +79,16 @@ All notable changes to the revived B.O.B. project are recorded here. This file d
 - preserved the complete pre-cleanup tree on `archive/pre-revival-cleanup-2026-08-19`;
 - retained generated pre-alpha inspiration/prototype artifacts as explicitly non-authoritative historical/reference material.
 
-## Current first-alpha frontier
+## Current alpha qualification frontier
 
-The current executable-readiness sequence is:
+The current release-qualification sequence is:
 
 1. native Windows startup-recovery acceptance for issue #85 / draft PR #103;
 2. native Windows NSIS lifecycle acceptance for issue #84 / draft PR #115;
-3. Wayfinder #30 convergence audit against the full first-alpha success criteria;
+3. Wayfinder #30 convergence audit against the full alpha qualification criteria;
 4. after truthful convergence, promote one already-authorized inference path with native evidence.
 
-B.O.B. remains labeled **pre-alpha** until those first-alpha acceptance obligations are satisfied. Hosted CI, source review, or package creation alone are not represented as native/product acceptance.
+B.O.B. is an **Alpha Product** now. Hosted CI, source review, or package creation alone are not represented as native release qualification, but outstanding native qualification work does not change the product stage back to pre-alpha.
 
 ## Legacy alpha history
 
