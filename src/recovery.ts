@@ -68,10 +68,14 @@ function formatBackupSize(sizeBytes: number) {
 function renderBackupCandidates(status: StartupStatus) {
   if (status.managedBackupCandidates === null || status.managedBackupCandidates.length === 0) return "";
 
+  const limitedCopy = status.managedBackupCount !== null && status.managedBackupCount > status.managedBackupCandidates.length
+    ? ` Showing the ${status.managedBackupCandidates.length} newest.`
+    : "";
+
   return `
     <section class="startup-recovery__candidates" aria-labelledby="startup-recovery-backups-title">
       <h2 id="startup-recovery-backups-title">Managed backups found</h2>
-      <p>Check a backup to see whether B.O.B. can safely read it. Checking happens in isolation and does not restore or replace anything.</p>
+      <p>Check a backup to see whether B.O.B. can safely read it. Checking happens in isolation and does not restore or replace anything.${limitedCopy}</p>
       <ul>
         ${status.managedBackupCandidates.map((candidate, index) => `
           <li>
