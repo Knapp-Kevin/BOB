@@ -509,6 +509,7 @@ function Assert-InstalledExecutableMatchesSession([object]$Session, [string]$Bou
     throw 'The smoke session does not contain packaged executable identity. Start a new package phase with the current helper.'
   }
   $installedExecutable = Join-Path $BoundInstallPath 'bob.exe'
+  Assert-NoReparsePointBelowTrustedRoot $installedExecutable $BoundInstallPath 'The installed B.O.B. executable'
   if (-not (Test-Path -LiteralPath $installedExecutable -PathType Leaf)) {
     throw 'The expected installed bob.exe does not exist at the recorded install path.'
   }
