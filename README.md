@@ -7,7 +7,7 @@
 **One agent. Less friction. The right intelligence when it matters.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Status: Pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange)
+![Status: Alpha](https://img.shields.io/badge/status-alpha-blue)
 ![Agent: B.O.B.](https://img.shields.io/badge/agent-single--agent-blue)
 ![Design: ADHD-friendly](https://img.shields.io/badge/design-ADHD--friendly-8a4fff)
 ![Data: Local-first](https://img.shields.io/badge/data-local--first-success)
@@ -22,7 +22,7 @@ A local-first, ADHD-friendly personal AI workbench that keeps tasks, plans, cont
 ![B.O.B. - Better Organized Brain](docs/assets/bob-readme-hero.png?raw=1&v=444fbf0)
 
 > [!IMPORTANT]
-> **Current status:** B.O.B. is an active **pre-alpha** desktop application, not a planning-only prototype. The core local-first product is implemented on `master`: Tauri 2 + Rust, Rust-owned SQLite state, Today/Inbox/Chat/Settings, deterministic planning, Assist/proposal validation, preview-before-apply, backup/restore/export, accessibility preferences, protected credentials, provider-independent runtime policy, an advanced optional Gemini API adapter, a non-user-facing Ollama tracer, reproducible Windows packaging, and hosted rendered diagnostics. The remaining first-alpha gates are native Windows startup-recovery acceptance, native NSIS install/relaunch/uninstall acceptance, and a final convergence audit. The retired Electron/Ollama prototype is historical only.
+> **Current status: Alpha Product.** B.O.B. is an active alpha desktop application, not a planning-only prototype. The core local-first product is implemented on `master`: Tauri 2 + Rust, Rust-owned SQLite state, Today/Inbox/Chat/Settings, deterministic planning, Assist/proposal validation, preview-before-apply, backup/restore/export, accessibility preferences, protected credentials, provider-independent runtime policy, an advanced optional Gemini API adapter, a non-user-facing Ollama tracer, reproducible Windows packaging, and hosted rendered diagnostics. The remaining work is **alpha release qualification**, specifically native Windows startup-recovery acceptance, native NSIS install/relaunch/uninstall acceptance, and a final convergence audit. Those gates determine release evidence and readiness; they do not move the product back to pre-alpha. The retired Electron/Ollama prototype is historical only.
 
 ## Why B.O.B. exists
 
@@ -120,15 +120,15 @@ The revived application now includes:
 - hosted frontend, Windows Rust, and rendered-UI diagnostics;
 - converged calm Settings, Today, Inbox, and Chat presentation.
 
-This is substantial executable product, but **first-alpha acceptance is not complete yet**.
+This is a substantive executable **Alpha Product**. Native alpha release qualification is not complete yet.
 
-## Current alpha-closing frontier
+## Current alpha qualification frontier
 
 The active frontier is intentionally narrow:
 
 1. **Startup recovery: issue #85 / draft PR #103.** The fail-closed recovery surface is implemented and hosted frontend/Rust/rendered evidence is green. It still requires native Windows 11 x64 corrupt-state, managed-backup preview, restart, filesystem-boundary, and accessibility evidence.
 2. **Windows NSIS acceptance: issue #84 / draft PR #115.** Reproducible packaging is implemented. The remaining work is native Windows default-path install, launch, state survival across relaunch, executable/icon identity, uninstall, stopped-process, and retained-user-data evidence.
-3. **Alpha convergence audit: Wayfinder #30.** After #103 and #84 receive truthful terminal dispositions, re-check the full first-alpha acceptance contract before describing the waypoint as reached.
+3. **Alpha convergence audit: Wayfinder #30.** After #103 and #84 receive truthful terminal dispositions, re-check the full alpha qualification contract before describing the integrated build as native-qualified for release.
 4. **Then promote one already-authorized inference path with native evidence.** Do not widen the provider surface merely because the queue becomes cleaner.
 
 Passing hosted CI is necessary regression evidence where relevant. It is not a substitute for the native Windows behavior required by these gates.
@@ -177,7 +177,7 @@ B.O.B. is local-first, not local-only.
 
 Canonical ordinary state remains in a Rust-owned local SQLite database. Logical changes are transactional; schema migrations are monotonic and fail closed; backups/restores use SQLite-consistent snapshots; portable export excludes secrets; credentials remain outside SQLite in the OS secret store.
 
-The active recovery work preserves corrupt/original canonical state and provides a restricted user-reachable recovery surface rather than silently resetting user data. Native Windows acceptance for that lifecycle is still required before first-alpha convergence.
+The active recovery work preserves corrupt/original canonical state and provides a restricted user-reachable recovery surface rather than silently resetting user data. Native Windows acceptance for that lifecycle is still required before alpha release qualification is complete.
 
 Remote inference receives only bounded context intentionally. Credentials must not appear in frontend state, logs, prompts, screenshots, fixtures, or ordinary application data. Model/runtime output is untrusted until validated.
 
