@@ -42,11 +42,11 @@ impl StartupState {
     }
 
     pub fn recovery_required(app_data_dir: &Path) -> Self {
-        let mut managed_backup_candidates = managed_backup_candidates(app_data_dir);
-        let managed_backup_count = managed_backup_candidates.as_ref().map(Vec::len);
-        if let Some(candidates) = managed_backup_candidates.as_mut() {
-            candidates.truncate(MAX_RECOVERY_BACKUP_CANDIDATES);
-        }
+        let inventory = managed_backup_candidates(app_data_dir);
+        let (managed_backup_count, managed_backup_candidates) = match inventory {
+            Some((count, candidates)) => (Some(count), Some(candidates)),
+            None => (None, None),
+        };
         Self(StartupStatus {
             mode: StartupMode::RecoveryRequired,
             managed_backup_count,
@@ -55,12 +55,14 @@ impl StartupState {
     }
 }
 
-fn managed_backup_candidates(app_data_dir: &Path) -> Option<Vec<ManagedBackupCandidate>> {
+fn managed_backup_candidates(
+    app_data_dir: &Path,
+) -> Option<(usize, Vec<ManagedBackupCandidate>)> {
     let backup_dir = app_data_dir.join(USER_BACKUP_DIR);
     let canonical_app_data_dir = fs::canonicalize(app_data_dir).ok()?;
     let canonical_backup_dir = match fs::canonicalize(&backup_dir) {
         Ok(path) => path,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Some(Vec::new()),
+        Err(error) if error.kind() == ErrorKind::NotFound => return Some((0, Vec::new())),
         Err(_) => return None,
     };
     if canonical_backup_dir != canonical_app_data_dir.join(USER_BACKUP_DIR) {
@@ -68,7 +70,8 @@ fn managed_backup_candidates(app_data_dir: &Path) -> Option<Vec<ManagedBackupCan
     }
 
     let entries = fs::read_dir(&canonical_backup_dir).ok()?;
-    let mut candidates = Vec::new();
+    let mut total_count = 0usize;
+    let mut candidates = Vec::with_capacity(MAX_RECOVERY_BACKUP_CANDIDATES);
     for entry in entries {
         let Ok(entry) = entry else {
             return None;
@@ -97,20 +100,22 @@ fn managed_backup_candidates(app_data_dir: &Path) -> Option<Vec<ManagedBackupCan
             .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
             .and_then(|duration| u64::try_from(duration.as_millis()).ok());
 
+        total_count = total_count.checked_add(1)?;
         candidates.push(ManagedBackupCandidate {
             id: name.to_owned(),
             modified_unix_ms,
             size_bytes: metadata.len(),
         });
+        candidates.sort_by(|left, right| {
+            right
+                .modified_unix_ms
+                .cmp(&left.modified_unix_ms)
+                .then_with(|| right.id.cmp(&left.id))
+        });
+        candidates.truncate(MAX_RECOVERY_BACKUP_CANDIDATES);
     }
 
-    candidates.sort_by(|left, right| {
-        right
-            .modified_unix_ms
-            .cmp(&left.modified_unix_ms)
-            .then_with(|| right.id.cmp(&left.id))
-    });
-    Some(candidates)
+    Some((total_count, candidates))
 }
 
 #[tauri::command]
