@@ -88,16 +88,16 @@ The user gets one identity, one continuity layer, and one place where only relev
 
 ## Current implementation status
 
-B.O.B. is public, MIT licensed, and in active **pre-alpha** development. It is no longer a planning-only revival: the active tree contains the Tauri 2 + Rust desktop application, Rust-owned SQLite state/migrations/backup/restore/export, Today/Inbox/Chat/Settings, deterministic planning and task lifecycle behavior, B.O.B. Assist/proposal validation, preview-before-apply, accessibility preferences, protected credentials, provider-independent runtime policy, an advanced optional Gemini API adapter, a bounded Ollama tracer, reproducible Windows packaging, and hosted rendered diagnostics.
+B.O.B. is public, MIT licensed, and an active **Alpha Product**. It is no longer a planning-only revival: the active tree contains the Tauri 2 + Rust desktop application, Rust-owned SQLite state/migrations/backup/restore/export, Today/Inbox/Chat/Settings, deterministic planning and task lifecycle behavior, B.O.B. Assist/proposal validation, preview-before-apply, accessibility preferences, protected credentials, provider-independent runtime policy, an advanced optional Gemini API adapter, a bounded Ollama tracer, reproducible Windows packaging, and hosted rendered diagnostics.
 
-The calm primary-workflow frontier is complete. Provider-independence research for the current runtime contract and local-runtime direction is also resolved enough to build under accepted authority. The immediate first-alpha frontier is now narrower:
+The calm primary-workflow frontier is complete. Provider-independence research for the current runtime contract and local-runtime direction is also resolved enough to build under accepted authority. The immediate **alpha qualification** frontier is now narrower:
 
 1. native Windows 11 x64 startup-recovery acceptance under #85 / draft PR #103;
 2. native Windows 11 x64 NSIS install/relaunch/uninstall acceptance under #84 / draft PR #115;
 3. a fresh alpha convergence audit under Wayfinder #30;
 4. only then promotion of one already-authorized inference path with native evidence.
 
-The `pre-alpha` label remains intentional until those first-alpha acceptance obligations are truthfully closed. Passing hosted CI alone does not satisfy them.
+The **Alpha Product** classification is intentional now. The remaining native gates determine release qualification and readiness; passing hosted CI alone does not satisfy them, but their existence does not revert B.O.B. to pre-alpha status.
 
 ## Documentation quality bar
 
