@@ -574,6 +574,7 @@ $timestamp = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 $canonicalStatePath = Get-CanonicalStatePath
 Assert-NoReparsePointBelowTrustedRoot $canonicalStatePath $env:APPDATA 'The canonical B.O.B. application-data target'
 $defaultInstallPath = Get-DefaultNsisInstallPath
+Assert-NoReparsePointBelowTrustedRoot $defaultInstallPath $env:LOCALAPPDATA 'The default B.O.B. installation target'
 Assert-AcceptanceTargetSinks $normalizedEvidencePath $normalizedSessionPath $canonicalStatePath $defaultInstallPath
 
 if ($Phase -eq 'package') {
