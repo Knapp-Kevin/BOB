@@ -55,9 +55,7 @@ impl StartupState {
     }
 }
 
-fn managed_backup_candidates(
-    app_data_dir: &Path,
-) -> Option<(usize, Vec<ManagedBackupCandidate>)> {
+fn managed_backup_candidates(app_data_dir: &Path) -> Option<(usize, Vec<ManagedBackupCandidate>)> {
     let backup_dir = app_data_dir.join(USER_BACKUP_DIR);
     let canonical_app_data_dir = fs::canonicalize(app_data_dir).ok()?;
     let canonical_backup_dir = match fs::canonicalize(&backup_dir) {
