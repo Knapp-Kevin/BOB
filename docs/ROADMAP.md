@@ -1,10 +1,11 @@
 # B.O.B. Roadmap
 
-**Status:** Accepted
+**Status:** Accepted  
+**Product stage:** **Alpha Product**
 
 The roadmap is capability-oriented rather than calendar-oriented. A release advances when its acceptance criteria are satisfied, not because a date arrived and demanded tribute.
 
-The first runnable alpha is a waypoint, not the end of development. Current Wayfinder maps and accepted repository authority determine the next build frontier.
+B.O.B. is now classified as an **Alpha Product**. The first runnable alpha waypoint has been crossed at the product-stage level; the remaining Windows recovery, installer, and convergence work is alpha release qualification. Current Wayfinder maps and accepted repository authority determine the next build frontier.
 
 ## Landed foundation
 
@@ -39,15 +40,15 @@ Wayfinder #86 is complete. Its bounded implementation owners landed as:
 
 Reduced-information mode remains additive simplification rather than a rescue mechanism for a cluttered default experience. Future presentation defects should receive new bounded owners rather than keeping completed Wayfinder work permanently open.
 
-## Current priority: executable readiness
+## Current priority: alpha qualification
 
-**Goal:** Turn landed source into repeatable, native, reviewable product evidence and remove the remaining first-alpha false greens.
+**Goal:** Turn the current Alpha Product into repeatable, native, reviewable release evidence and remove the remaining qualification false greens.
 
 The immediate frontier is intentionally narrow:
 
 1. **Startup recovery:** #85 / draft PR #103 owns visible fail-closed startup recovery. Its hosted frontend, Windows Rust, and normal rendered regression gates are green on its current exact head, but it remains draft until the real Windows corrupt-state, backup-preview, process-restart, and recovery-surface accessibility behavior is exercised.
 2. **Windows package acceptance:** #84 is open and owns the native Windows 11 x64 NSIS install/launch/relaunch/icon/uninstall/retained-user-data evidence. Hosted package creation and a written runbook are not equivalent to native install acceptance.
-3. **Alpha convergence audit:** after those owners are truthfully dispositioned, re-evaluate the first-alpha success criteria and remaining native credential/provider/restart evidence before declaring the waypoint complete.
+3. **Alpha convergence audit:** after those owners are truthfully dispositioned, re-evaluate the alpha qualification criteria and remaining native credential/provider/restart evidence before declaring the integrated build release-qualified.
 
 Supporting readiness work includes:
 
@@ -62,7 +63,7 @@ Supporting readiness work includes:
 
 Small CI remains a safety net. Native/recovery/provider/package evidence is not replaced by green hosted checks.
 
-## Current priority after readiness: provider-independent inference
+## Current priority after qualification: provider-independent inference
 
 **Goal:** Make inference replaceable without making provider plumbing B.O.B.'s product identity.
 
@@ -79,7 +80,7 @@ Current accepted direction:
 - preserve deterministic useful operation with no inference configured;
 - preserve no-surprise billing and no silent provider/model fallback.
 
-The next runtime step should promote one already-authorized path with real native evidence after the active recovery/package readiness frontier is reconciled. Do not respond to a cleaner queue by proliferating adapters or placeholder provider controls.
+The next runtime step should promote one already-authorized path with real native evidence after the active recovery/package qualification frontier is reconciled. Do not respond to a cleaner queue by proliferating adapters or placeholder provider controls.
 
 ## Next capability candidates
 

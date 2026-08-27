@@ -1,10 +1,11 @@
 # B.O.B. Alpha Validation and Packaging
 
-**Status:** Accepted first-alpha validation contract  
+**Status:** Accepted alpha qualification contract  
+**Product stage:** **Alpha Product**  
 **Wayfinder:** #39  
 **Primary platform:** Windows 11 x64
 
-This document defines the evidence required before B.O.B. can be described as a runnable, reviewable first alpha. CI is deliberately small. The implementing developer or coding agent owns the stronger local, native, rendered, and failure-path evidence.
+This document defines the evidence required to qualify B.O.B.'s current Alpha Product as a runnable, reviewable Windows alpha build and to support any alpha release claim. CI is deliberately small. The implementing developer or coding agent owns the stronger local, native, rendered, and failure-path evidence.
 
 ## Core command gate
 
@@ -111,7 +112,7 @@ The governing provider boundary is in `docs/governance/AI_COST_AND_PROVIDER_POLI
 
 ## Packaging
 
-The first alpha package is a Windows 11 x64 NSIS installer.
+The current alpha package is a Windows 11 x64 NSIS installer.
 
 Build it on Windows with:
 
@@ -133,7 +134,7 @@ Acceptance requires:
 
 When collecting Windows shell/icon evidence, account for Explorer/icon caching separately from the executable's embedded resource so cached presentation is not mistaken for build output.
 
-MSI is deferred for the first alpha. It duplicates the installer surface and adds WiX/VBScript requirements without a current product requirement.
+MSI is deferred for the current alpha. It duplicates the installer surface and adds WiX/VBScript requirements without a current product requirement.
 
 macOS/Linux installers, cross-platform matrices, store publication, auto-update infrastructure, and broad release automation are deferred until a later release requires them.
 
@@ -173,4 +174,4 @@ Every material PR must state:
 - remaining acceptance debt;
 - active-work/stack coordination when other implementation is in flight.
 
-Green CI is not proof of the intended user outcome. The alpha is runnable when the real application has been built, exercised, restarted, failed safely, packaged, and reviewed on its primary platform.
+Green CI is not proof of the intended user outcome. The Alpha Product is release-qualified when the real application has been built, exercised, restarted, failed safely, packaged, and reviewed on its primary platform.
