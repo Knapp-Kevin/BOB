@@ -43,6 +43,15 @@ export async function loadStartupStatus(): Promise<StartupStatus> {
 export async function validateRecoveryBackup(candidateId: string): Promise<RecoveryBackupPreview> {
   if (!isTauriRuntime()) {
     if (recoveryFixture()) {
+      if (candidateId === "bob-backup-render-2.sqlite3") {
+        return {
+          candidateId,
+          validation: "unavailable",
+          workItemCount: null,
+          hasActiveItem: null,
+          message: "B.O.B. could not validate this backup for recovery. Nothing was changed."
+        };
+      }
       return {
         candidateId,
         validation: "usable",
