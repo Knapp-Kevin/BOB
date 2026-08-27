@@ -280,6 +280,21 @@ for (const viewport of viewports) {
   report.audits.push(previewAudit);
   await capture(previewLabel);
   if (previewAudit.horizontalOverflow || previewAudit.clippedFocusables.length) failures.push(`${previewLabel}: recovery preview layout overflow/clipping`);
+
+  await click('[data-validate-backup="1"]');
+  await waitFor(`document.querySelector('[data-backup-result="1"]')?.textContent?.includes("could not validate this backup")`, "unavailable recovery preview result");
+  const unavailableLabel = `${viewport.name}-startup-recovery-preview-unavailable`;
+  const unavailableAudit = await audit(unavailableLabel, null);
+  const unavailableState = await evaluate(`(() => ({
+    retryEnabled: !document.querySelector('[data-validate-backup="1"]')?.disabled,
+    retryCopyRestored: document.querySelector('[data-validate-backup="1"]')?.textContent?.trim() === "Check backup"
+  }))()`);
+  report.audits.push(unavailableAudit);
+  report.recovery.push({ label: unavailableLabel, ...unavailableState });
+  await capture(unavailableLabel);
+  if (unavailableAudit.horizontalOverflow || unavailableAudit.clippedFocusables.length) failures.push(`${unavailableLabel}: unavailable recovery preview layout overflow/clipping`);
+  if (!unavailableState.retryEnabled) failures.push(`${unavailableLabel}: unavailable backup check did not re-enable its control`);
+  if (!unavailableState.retryCopyRestored) failures.push(`${unavailableLabel}: unavailable backup check did not restore retry copy`);
 }
 
 await writeFile(join(outputDir, "audit.json"), `${JSON.stringify(report, null, 2)}\n`);
