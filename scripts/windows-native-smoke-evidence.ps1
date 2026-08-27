@@ -591,9 +591,17 @@ if ($Phase -eq 'package') {
     throw 'The package-derived default B.O.B. installation target already exists. Use a disposable clean test profile; do not delete an existing installation merely to satisfy this smoke test.'
   }
 
-  $canonicalStateExistsBeforeInstall = Test-Path -LiteralPath $canonicalStatePath -PathType Leaf
-  if ($canonicalStateExistsBeforeInstall) {
-    throw 'Canonical B.O.B. state already exists in this Windows profile. Use a disposable clean test profile for native acceptance; do not delete real user data merely to satisfy this smoke test.'
+  try {
+    $canonicalStateObject = Get-Item -LiteralPath $canonicalStatePath -Force -ErrorAction Stop
+  }
+  catch [System.Management.Automation.ItemNotFoundException] {
+    $canonicalStateObject = $null
+  }
+  catch {
+    throw 'Unable to prove the canonical B.O.B. state target is absent. Use a clean disposable Windows profile and investigate the filesystem state before continuing.'
+  }
+  if ($null -ne $canonicalStateObject) {
+    throw 'The canonical B.O.B. state target already contains a filesystem object. Use a disposable clean test profile; do not delete real user data or other existing state merely to satisfy this smoke test.'
   }
 
   Invoke-LockedPackageBuild $head
