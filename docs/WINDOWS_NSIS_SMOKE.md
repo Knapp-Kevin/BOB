@@ -15,6 +15,8 @@ The helper redacts local filesystem identity from the evidence file before it is
 
 The evidence/session sinks are also fail-closed. `-EvidencePath` must resolve outside the B.O.B. repository checkout and must not equal the local protected smoke-session path. The protected `%TEMP%\bob-windows-native-smoke-session.dpapi` path must itself also resolve outside the checkout, so a customized `%TEMP%` beneath the repository is rejected before any session state is written. After the exact Tauri acceptance targets are derived, both public evidence and protected session sinks must also remain outside B.O.B.'s canonical application-data directory and outside the package-derived default installation target. This prevents the helper from creating evidence or continuity files inside clean first-run state, managed recovery state, or the clean installation target before native acceptance begins. The helper additionally rejects a repository checkout, evidence sink, or protected-session sink whose existing path or ancestor chain contains a Windows reparse point. This prevents a junction or symbolic link from making a sink look lexically external while redirecting the actual write into repository state or another unintended location. The default `%TEMP%\bob-windows-native-smoke-evidence.md` and ordinary system `%TEMP%` session location satisfy this boundary. Do not redirect evidence or temporary session state through junctions/symbolic links, into the checkout, into B.O.B.'s application-data directory, or into the default install target.
 
+The canonical application-data acceptance target is independently fail-closed against redirection. The helper requires `%APPDATA%\<identifier>\bob.sqlite3` to remain lexically beneath the current `%APPDATA%` root and rejects any existing component below that trusted profile root that is a Windows reparse point. The `%APPDATA%` root itself is treated as the trusted Windows profile boundary rather than being reclassified by this helper. This blocks an app-specific junction or symbolic link from redirecting canonical B.O.B. state elsewhere while preserving ordinary Windows profile-root behavior.
+
 The `package` phase starts a fresh smoke session and stores a local-only continuity record in `%TEMP%\bob-windows-native-smoke-session.dpapi`. Its JSON payload is protected at rest with Windows DPAPI scoped to the current user before being written. Later phases must successfully unprotect and parse that record before they can validate continuity or append evidence; tampered, corrupt, empty, or different-user session data fails closed and requires a new package phase. The raw session values are never written to the public evidence file.
 
 The executable identity check deliberately assumes the NSIS installation preserves the package-built `bob.exe` bytes. The first native execution must validate that assumption. If the installed executable hash differs, do not weaken the check or reinterpret the run as passing. Leave #84 open, preserve both hashes, and determine whether NSIS legitimately transforms the payload before replacing this mechanism with an equivalent deterministic identity check.
@@ -29,6 +31,7 @@ Process evidence is also fail-closed. A genuine `Get-Process` result showing no 
 - Disposable test profile with no production credentials or sensitive user data.
 - No platform-specific `src-tauri/tauri.windows.conf.json` or custom NSIS template/hooks unless #84 is first reconciled to an explicit effective-path policy.
 - The expected canonical `bob.sqlite3` must be absent before installation. If state already exists, use another disposable profile. Do not delete real user data merely to satisfy this smoke test.
+- The app-specific canonical application-data target beneath `%APPDATA%` must not be redirected through a junction or symbolic link.
 - The package-derived default installation target must be absent before installation. If it exists, use another disposable profile. Do not delete a real installation merely to make acceptance green.
 - Public evidence and protected session sinks must be ordinary external temporary locations, not paths inside the checkout, B.O.B. application data, or the derived default install target.
 
@@ -53,16 +56,17 @@ The package phase:
 3. validates that the checkout, public evidence sink, and protected session sink do not traverse Windows reparse points, that both sinks are outside the checkout, and that the two sinks are distinct;
 4. reads the exact Tauri config and requires the accepted stock `currentUser` NSIS path policy;
 5. derives the normalized default per-user installation target under `%LOCALAPPDATA%` and the canonical application-data target under `%APPDATA%`;
-6. rejects public evidence or protected session sinks inside either B.O.B.'s canonical application-data directory or the derived default installation target;
-7. fails if the default installation target already exists;
-8. verifies expected canonical state is absent;
-9. runs locked `npm ci`;
-10. rechecks HEAD and repository cleanliness;
-11. runs `npm run package:windows` through the accepted targeted-clean path;
-12. rechecks HEAD and repository cleanliness;
-13. requires exactly one generated NSIS installer and hashes it;
-14. hashes the package-built `src-tauri\target\release\bob.exe`;
-15. starts a fresh evidence file and DPAPI-protected smoke-session record bound to the package, host, profile, default target, evidence path, and evidence digest.
+6. verifies the canonical application-data target remains beneath `%APPDATA%` and rejects any existing app-specific path component below that trusted root when it is a Windows reparse point;
+7. rejects public evidence or protected session sinks inside either B.O.B.'s canonical application-data directory or the derived default installation target;
+8. fails if the default installation target already exists;
+9. verifies expected canonical state is absent;
+10. runs locked `npm ci`;
+11. rechecks HEAD and repository cleanliness;
+12. runs `npm run package:windows` through the accepted targeted-clean path;
+13. rechecks HEAD and repository cleanliness;
+14. requires exactly one generated NSIS installer and hashes it;
+15. hashes the package-built `src-tauri\target\release\bob.exe`;
+16. starts a fresh evidence file and DPAPI-protected smoke-session record bound to the package, host, profile, default target, evidence path, and evidence digest.
 
 If you want an additional assertion, this is valid only when the path equals the derived default target:
 
@@ -102,7 +106,7 @@ Launch installed B.O.B. from the created shortcut or executable. While B.O.B. re
 2. Today, Inbox, Chat, and Settings are reachable;
 3. a simple non-sensitive test item can be captured or changed.
 
-B.O.B. resolves canonical state through Tauri `app_data_dir()`. The helper reads the bundle identifier from the exact checkout and checks the corresponding `%APPDATA%\<identifier>\bob.sqlite3` rather than recursively searching the profile.
+B.O.B. resolves canonical state through Tauri `app_data_dir()`. The helper reads the bundle identifier from the exact checkout and checks the corresponding `%APPDATA%\<identifier>\bob.sqlite3` rather than recursively searching the profile. The helper rechecks the app-specific canonical path for reparse-point redirection on every phase before using that path as evidence.
 
 Capture machine evidence while the application remains running:
 
@@ -204,7 +208,7 @@ Attach or record the following on #84 before closing it. By default the helper w
 
 A failure in any acceptance step leaves #84 open. Preserve the exact installer, commit SHA, Windows build, observed behavior, and relevant non-secret logs before changing packaging code.
 
-If the helper reports a non-Windows-11-x64 host, unsafe or reparse-point-backed repository/evidence/session path, evidence/session overlap with B.O.B. application data or the default install target, unsupported NSIS mode/path customization, platform-specific Windows config, pre-existing canonical state, or pre-existing default installation target, do not override it. Reconcile the effective package policy if necessary, otherwise use a clean Windows 11 x64 disposable profile and restart at `package`.
+If the helper reports a non-Windows-11-x64 host, unsafe or reparse-point-backed repository/evidence/session path, a reparse-backed app-specific canonical application-data target below `%APPDATA%`, evidence/session overlap with B.O.B. application data or the default install target, unsupported NSIS mode/path customization, platform-specific Windows config, pre-existing canonical state, or pre-existing default installation target, do not override it. Reconcile the effective package policy if necessary, otherwise use a clean Windows 11 x64 disposable profile and restart at `package`.
 
 If the installed-phase recursive installation-tree scan cannot enumerate every subtree, database absence has not been proven. Do not suppress the error, manually mark the evidence row true, or advance the smoke session. Investigate the unreadable path and start again at `package` once the environment can be checked completely.
 
