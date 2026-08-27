@@ -1,44 +1,34 @@
 # UI Inspiration Artifacts
 
-This directory holds visual inspiration for the B.O.B. pre-alpha interface.
+**Status:** Historical / directional references
 
-These images are **directional design references, not normative specifications**. They exist to anchor visual hierarchy, information density, onboarding flow, and interaction tone while the runnable pre-alpha surface is built. When an image conflicts with accepted product, architecture, design, RFC, ADR, or Wayfinder decisions, the governing text wins.
+This directory preserves visual artifacts used during B.O.B.'s pre-alpha interaction exploration. They are not normative specifications and do not describe the current implementation exhaustively.
 
-## Expected artifacts
+The product has since converged through accepted design authority and merged implementation work. When an image conflicts with current product, architecture, design, Wayfinder decisions, or the landed application, current authority wins.
 
-| File | Purpose |
-| --- | --- |
-| `bob-today-ui.png` | Today surface: next action, bounded focus, quick capture, day planning, resume context, and reduced-information access. |
-| `bob-inbox-ui.png` | Inbox surface: frictionless capture, lightweight organization, attention cues, and easy re-entry. |
-| `bob-chat-ui.png` | B.O.B. Chat: one user-facing agent, decision support, clear next action, and provider/runtime complexity kept secondary. |
-| `bob-gemini-setup-ui.png` | First-run Gemini setup: direct path to Google AI Studio, 2–3 step credential onboarding, immediate validation, and clear free-tier/privacy context. |
+## Durable lessons
 
-## Design intent
+These artifacts helped establish principles that remain current:
 
-The artifacts should reinforce the existing B.O.B. product principles:
-
-- **B.O.B. is the agent. Models, runtimes, and tools are capabilities.**
+- B.O.B. is the user-facing agent; models, runtimes, and tools remain capabilities behind B.O.B.
 - Today is the obvious starting surface.
 - One useful next action should dominate secondary choices.
 - Capture should be cheaper than organization.
 - Reduced-information behavior should remove cognitive load rather than create another workflow.
-- Chat should remain connected to current work and feel like B.O.B., not a provider switchboard.
-- Setup is part of the product. A new user should not have to discover provider-specific configuration by wandering through unrelated account and cloud-console surfaces.
+- Chat should remain connected to current work rather than becoming a provider switchboard.
 - Accessibility, readable hierarchy, and user-controllable information density are first-class requirements.
 
-## How to use these images
+## Current disposition
 
-Use the artifacts to inform:
+Several details in the generated concepts are now superseded:
 
-- layout hierarchy;
-- spatial relationships;
-- information density;
-- interaction priorities;
-- onboarding flow shape;
-- visual tone and affordances;
-- the balance between calmness and actionable emphasis.
+- ordinary Settings no longer carries persistent provider-specific status or development-governance exposition;
+- Gemini API remains an advanced optional adapter rather than B.O.B.'s normal product identity;
+- Today, Inbox, Chat, and Settings hierarchy converged through completed Wayfinder #86 and merged PRs #89/#93/#106;
+- provider-independent runtime policy and a bounded Ollama tracer now exist behind B.O.B.-owned routing/policy;
+- startup recovery is now represented by the restricted recovery surface in draft PR #103 and its current rendered/native acceptance contract.
 
-Do **not** copy incidental generated details blindly. Generated text, timestamps, labels, icons, model/provider names, task examples, or individual controls may be inaccurate or superseded. Validate behavior against the repository's governing product and design documents.
+Do not copy incidental generated labels, timestamps, provider names, task examples, or controls into current implementation without validating them against current authority.
 
 ## Governing references
 
@@ -48,21 +38,7 @@ Start with:
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md)
 - [`../DESIGN.md`](../DESIGN.md)
 - [`../IMPLEMENTATION_PLAN.md`](../IMPLEMENTATION_PLAN.md)
-- the active Wayfinder map and resolved decision tickets
+- [`../ROADMAP.md`](../ROADMAP.md)
+- active Wayfinder maps and current issues/pull requests
 
-The intended implementation relationship is simple:
-
-```text
-accepted product/design decisions
-            |
-            v
-   visual inspiration artifacts
-            |
-            v
-    pre-alpha runnable UI
-            |
-            v
-       owner UX review
-```
-
-The pre-alpha should converge through rendered review and real interaction, not through pixel-for-pixel imitation of generated concept art.
+These files are preserved because design provenance is useful. They should not be kept artificially synchronized with every later UI revision.
