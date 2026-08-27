@@ -32,7 +32,7 @@ Process evidence is also fail-closed. A genuine `Get-Process` result showing no 
 - Node 22 and Rust 1.88 or newer.
 - Disposable test profile with no production credentials or sensitive user data.
 - No platform-specific `src-tauri/tauri.windows.conf.json` or custom NSIS template/hooks unless #84 is first reconciled to an explicit effective-path policy.
-- The expected canonical `bob.sqlite3` must be absent before installation. If state already exists, use another disposable profile. Do not delete real user data merely to satisfy this smoke test.
+- The exact canonical `%APPDATA%\<identifier>\bob.sqlite3` target must contain no filesystem object before installation. A regular file, directory, reparse-backed object, or any target whose absence cannot be proven fails the clean-profile precondition. Use another disposable profile; do not delete real user data or other existing state merely to satisfy this smoke test.
 - The app-specific canonical application-data target beneath `%APPDATA%` must not be redirected through a junction or symbolic link.
 - The package-derived default installation target beneath `%LOCALAPPDATA%` must not be redirected through a junction or symbolic link.
 - The package-derived default installation target must be absent before installation. If it exists, use another disposable profile. Do not delete a real installation merely to make acceptance green.
@@ -63,7 +63,7 @@ The package phase:
 7. verifies the package-derived default installation target remains beneath `%LOCALAPPDATA%` and rejects any existing app-specific path component below that trusted root when it is a Windows reparse point;
 8. rejects public evidence or protected session sinks inside either B.O.B.'s canonical application-data directory or the derived default installation target;
 9. fails if the default installation target already exists;
-10. verifies expected canonical state is absent;
+10. fails closed unless the exact canonical `bob.sqlite3` target contains no filesystem object and its absence can be proven;
 11. runs locked `npm ci`;
 12. rechecks HEAD and repository cleanliness;
 13. runs `npm run package:windows` through the accepted targeted-clean path;
@@ -212,7 +212,7 @@ Attach or record the following on #84 before closing it. By default the helper w
 
 A failure in any acceptance step leaves #84 open. Preserve the exact installer, commit SHA, Windows build, observed behavior, and relevant non-secret logs before changing packaging code.
 
-If the helper reports a non-Windows-11-x64 host, unsafe or reparse-point-backed repository/evidence/session path, a reparse-backed app-specific canonical application-data target below `%APPDATA%`, a reparse-backed package-derived default install target below `%LOCALAPPDATA%`, evidence/session overlap with B.O.B. application data or the default install target, unsupported NSIS mode/path customization, platform-specific Windows config, pre-existing canonical state, or pre-existing default installation target, do not override it. Reconcile the effective package policy if necessary, otherwise use a clean Windows 11 x64 disposable profile and restart at `package`.
+If the helper reports a non-Windows-11-x64 host, unsafe or reparse-point-backed repository/evidence/session path, a reparse-backed app-specific canonical application-data target below `%APPDATA%`, a reparse-backed package-derived default install target below `%LOCALAPPDATA%`, evidence/session overlap with B.O.B. application data or the default install target, unsupported NSIS mode/path customization, platform-specific Windows config, any pre-existing filesystem object at the exact canonical `bob.sqlite3` target, or a pre-existing default installation target, do not override it. Reconcile the effective package policy if necessary, otherwise use a clean Windows 11 x64 disposable profile and restart at `package`.
 
 If the installed-phase recursive installation-tree scan cannot enumerate every subtree, database absence has not been proven. Do not suppress the error, manually mark the evidence row true, or advance the smoke session. Investigate the unreadable path and start again at `package` once the environment can be checked completely.
 
