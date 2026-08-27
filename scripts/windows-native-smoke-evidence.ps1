@@ -693,6 +693,7 @@ else {
         throw 'Installed process identity is missing from this smoke session. Start a new package phase with the current helper before recording relaunch evidence.'
       }
 
+      $verifiedRelaunchedExecutableHash = Assert-InstalledExecutableMatchesSession $session $session.installPath
       $installedStart = [DateTimeOffset]::Parse($session.installedProcessStartTimeUtc)
       $bobProcesses = @(Get-InstalledBobProcesses $session.installPath)
       $canonicalStateExists = Test-Path -LiteralPath $canonicalStatePath -PathType Leaf
@@ -712,6 +713,7 @@ else {
 
       Begin-SessionPhase $session 'installed' $Phase
       Add-PhaseHeader $Phase $head $windowsVersion $windowsArchitecture $timestamp
+      Add-EvidenceRow 'Relaunched bob.exe matches package-built SHA-256' ($verifiedRelaunchedExecutableHash -eq $session.packagedExecutableHash)
       Add-EvidenceRow 'Fresh B.O.B. process observed after relaunch' $true
       Add-EvidenceRow 'Expected canonical state path' (ConvertTo-EvidencePath $canonicalStatePath)
       Add-EvidenceRow 'Expected canonical state exists after relaunch' $true
