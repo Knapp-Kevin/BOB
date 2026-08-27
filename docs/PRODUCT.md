@@ -1,11 +1,14 @@
 # Product Definition
 
 **Status:** Accepted  
-**Product:** B.O.B. | Better Organized Brain
+**Product:** B.O.B. | Better Organized Brain  
+**Product stage:** **Alpha Product**
 
 ## Product statement
 
 B.O.B. is a local-first personal AI workbench with **one user-facing agent identity: B.O.B.** Behind that single point of contact, B.O.B. can use multiple LLMs, inference runtimes, and tools while keeping the user's tasks, plans, preferences, and continuity independent of any one vendor or model.
+
+B.O.B. is currently classified as an **Alpha Product**. The implemented product exists and is usable as an alpha-stage desktop application; remaining native Windows recovery and installer obligations are release-qualification evidence, not a reason to classify the product as pre-alpha.
 
 B.O.B. adds value in two places that vendor applications do not share:
 
@@ -136,7 +139,7 @@ B.O.B. reasons, summarizes, organizes, transforms, and proposes using an allowed
 
 The user explicitly grants **B.O.B.** bounded authority for a defined task. B.O.B. may then use an execution-capable runtime or approved tool inside that grant. The user is not delegating to a separate peer agent.
 
-Delegate/tool execution is a future capability relative to the first runnable alpha and does not block that alpha's Assist-mode usefulness.
+Delegate/tool execution is a future capability relative to the current alpha product and does not block its Assist-mode usefulness or alpha-stage classification.
 
 ## Cost and provider model
 
@@ -170,7 +173,7 @@ Vendor/runtime session state may be referenced as an implementation detail but i
 
 ## Explicit non-goals
 
-The first runnable alpha does not include:
+The current alpha product does not include:
 
 - a visible multi-agent swarm, agent roster, or peer-agent orchestration model;
 - a required second inference backend;
@@ -188,9 +191,9 @@ The first runnable alpha does not include:
 - silent metered API fallback;
 - gamified productivity scoring or shame-oriented analytics.
 
-## First runnable alpha success criteria
+## Alpha qualification success criteria
 
-The first runnable alpha is successful when a Windows 11 x64 user can:
+B.O.B. is already classified as an **Alpha Product**. The current integrated alpha build is release-qualified when a Windows 11 x64 user can:
 
 - launch B.O.B. into the Today-first interaction shell;
 - capture and manage work through Today and Inbox;
@@ -205,4 +208,4 @@ The first runnable alpha is successful when a Windows 11 x64 user can:
 - understand provider/privacy/cost state without being forced to manage a provider dashboard;
 - verify the alpha through the resolved local validation, recovery, accessibility, and Windows packaging evidence.
 
-A second runtime is intentionally deferred from the first-alpha acceptance bar. Continued development beyond that waypoint follows the provider-independent and local-runtime Wayfinder destinations rather than preserving Gemini as the default product identity.
+A second runtime is intentionally deferred from the current alpha qualification bar. Continued development after native qualification follows the provider-independent and local-runtime Wayfinder destinations rather than preserving Gemini as the default product identity.
