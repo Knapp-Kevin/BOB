@@ -91,8 +91,8 @@ async function setViewport(width, height) {
   });
 }
 
-async function navigate() {
-  await command("Page.navigate", { url: baseUrl });
+async function navigate(url = baseUrl) {
+  await command("Page.navigate", { url });
   await waitFor(
     `document.readyState === "complete" && Boolean(document.querySelector("#app")?.children.length)`,
     "B.O.B. application render"
@@ -199,7 +199,8 @@ const report = {
   evidenceClass: "hosted-vite-rendered",
   nativeWindowsEvidence: false,
   audits: [],
-  keyboard: []
+  keyboard: [],
+  recovery: []
 };
 const failures = [];
 const viewports = [
@@ -253,6 +254,47 @@ for (const viewport of viewports) {
   await capture(setupLabel);
   if (!setupAudit.dialogVisible) failures.push(`${setupLabel}: expected setup dialog is not visible`);
   if (setupAudit.horizontalOverflow || setupAudit.clippedFocusables.length) failures.push(`${setupLabel}: setup dialog overflow/clipping`);
+
+  await navigate(`${baseUrl}?bobRecoveryFixture=1`);
+  await waitFor(`Boolean(document.querySelector("#startup-recovery-title"))`, "startup recovery fixture");
+  const recoveryLabel = `${viewport.name}-startup-recovery`;
+  const recoveryAudit = await audit(recoveryLabel, null);
+  const recoveryState = await evaluate(`(() => ({
+    titleFocused: document.activeElement?.id === "startup-recovery-title",
+    candidateButtons: document.querySelectorAll("[data-validate-backup]").length,
+    boundedDisclosure: document.querySelector(".startup-recovery__candidates > p")?.textContent?.includes("Showing the 8 newest.") ?? false
+  }))()`);
+  report.audits.push(recoveryAudit);
+  report.recovery.push({ label: recoveryLabel, ...recoveryState });
+  await capture(recoveryLabel);
+  if (recoveryAudit.horizontalOverflow) failures.push(`${recoveryLabel}: recovery layout has horizontal overflow`);
+  if (recoveryAudit.clippedFocusables.length) failures.push(`${recoveryLabel}: recovery controls are clipped horizontally`);
+  if (!recoveryState.titleFocused) failures.push(`${recoveryLabel}: recovery heading did not receive startup focus`);
+  if (recoveryState.candidateButtons !== 8) failures.push(`${recoveryLabel}: expected eight bounded backup controls`);
+  if (!recoveryState.boundedDisclosure) failures.push(`${recoveryLabel}: bounded backup disclosure is missing`);
+
+  await click('[data-validate-backup="0"]');
+  await waitFor(`document.querySelector('[data-backup-result="0"]')?.textContent?.includes("7 work items")`, "recovery preview result");
+  const previewLabel = `${viewport.name}-startup-recovery-preview`;
+  const previewAudit = await audit(previewLabel, null);
+  report.audits.push(previewAudit);
+  await capture(previewLabel);
+  if (previewAudit.horizontalOverflow || previewAudit.clippedFocusables.length) failures.push(`${previewLabel}: recovery preview layout overflow/clipping`);
+
+  await click('[data-validate-backup="1"]');
+  await waitFor(`document.querySelector('[data-backup-result="1"]')?.textContent?.includes("could not validate this backup")`, "unavailable recovery preview result");
+  const unavailableLabel = `${viewport.name}-startup-recovery-preview-unavailable`;
+  const unavailableAudit = await audit(unavailableLabel, null);
+  const unavailableState = await evaluate(`(() => ({
+    retryEnabled: !document.querySelector('[data-validate-backup="1"]')?.disabled,
+    retryCopyRestored: document.querySelector('[data-validate-backup="1"]')?.textContent?.trim() === "Check backup"
+  }))()`);
+  report.audits.push(unavailableAudit);
+  report.recovery.push({ label: unavailableLabel, ...unavailableState });
+  await capture(unavailableLabel);
+  if (unavailableAudit.horizontalOverflow || unavailableAudit.clippedFocusables.length) failures.push(`${unavailableLabel}: unavailable recovery preview layout overflow/clipping`);
+  if (!unavailableState.retryEnabled) failures.push(`${unavailableLabel}: unavailable backup check did not re-enable its control`);
+  if (!unavailableState.retryCopyRestored) failures.push(`${unavailableLabel}: unavailable backup check did not restore retry copy`);
 }
 
 await writeFile(join(outputDir, "audit.json"), `${JSON.stringify(report, null, 2)}\n`);
@@ -264,5 +306,5 @@ if (failures.length) {
   for (const failure of failures) console.error(`- ${failure}`);
   process.exitCode = 1;
 } else {
-  console.log(`Rendered UI diagnostic passed with ${report.audits.length} audited states and ${report.keyboard.length} keyboard checks.`);
+  console.log(`Rendered UI diagnostic passed with ${report.audits.length} audited states, ${report.keyboard.length} keyboard checks, and ${report.recovery.length} recovery checks.`);
 }

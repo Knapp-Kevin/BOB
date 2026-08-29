@@ -3,6 +3,81 @@ import type { AccessibilityPreferences, GeminiCredentialStatus, ItemKind, Persis
 
 const isTauriRuntime = () => "__TAURI_INTERNALS__" in window;
 const browserGeminiStatus: GeminiCredentialStatus = { configured: false, validation: "notConfigured" };
+const recoveryFixture = () => !isTauriRuntime() && new URLSearchParams(window.location.search).get("bobRecoveryFixture") === "1";
+
+export type ManagedBackupCandidate = {
+  id: string;
+  modifiedUnixMs: number | null;
+  sizeBytes: number;
+};
+
+export type RecoveryBackupPreview = {
+  candidateId: string;
+  validation: "usable" | "unavailable";
+  workItemCount: number | null;
+  hasActiveItem: boolean | null;
+  message: string;
+};
+
+export type StartupStatus = {
+  mode: "ready" | "recoveryRequired";
+  managedBackupCount: number | null;
+  managedBackupCandidates: ManagedBackupCandidate[] | null;
+};
+
+function browserRecoveryStatus(): StartupStatus {
+  const now = Date.now();
+  const managedBackupCandidates = Array.from({ length: 8 }, (_, index) => ({
+    id: `bob-backup-render-${index + 1}.sqlite3`,
+    modifiedUnixMs: now - index * 60 * 60 * 1000,
+    sizeBytes: 48_000 + index * 8_192
+  }));
+  return { mode: "recoveryRequired", managedBackupCount: 12, managedBackupCandidates };
+}
+
+export async function loadStartupStatus(): Promise<StartupStatus> {
+  if (!isTauriRuntime()) return recoveryFixture() ? browserRecoveryStatus() : { mode: "ready", managedBackupCount: 0, managedBackupCandidates: [] };
+  return invoke<StartupStatus>("startup_status");
+}
+
+export async function validateRecoveryBackup(candidateId: string): Promise<RecoveryBackupPreview> {
+  if (!isTauriRuntime()) {
+    if (recoveryFixture()) {
+      if (candidateId === "bob-backup-render-2.sqlite3") {
+        return {
+          candidateId,
+          validation: "unavailable",
+          workItemCount: null,
+          hasActiveItem: null,
+          message: "B.O.B. could not validate this backup for recovery. Nothing was changed."
+        };
+      }
+      return {
+        candidateId,
+        validation: "usable",
+        workItemCount: 7,
+        hasActiveItem: true,
+        message: "This backup passed B.O.B.'s recovery checks. Nothing has been restored yet."
+      };
+    }
+    return {
+      candidateId,
+      validation: "unavailable",
+      workItemCount: null,
+      hasActiveItem: null,
+      message: "Recovery backup validation is available only in the installed B.O.B. application."
+    };
+  }
+  return invoke<RecoveryBackupPreview>("validate_recovery_backup_command", { candidateId });
+}
+
+export async function restartApplication(): Promise<void> {
+  if (!isTauriRuntime()) {
+    window.location.reload();
+    return;
+  }
+  return invoke<void>("restart_application");
+}
 
 export async function loadPersistentWorkState(): Promise<PersistentWorkState | null> {
   if (!isTauriRuntime()) return null;
