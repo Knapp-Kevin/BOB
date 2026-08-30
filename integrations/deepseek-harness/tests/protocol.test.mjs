@@ -97,3 +97,27 @@ test('rejects oversized requests before attempting to spawn a sidecar', async ()
     /planning request exceeded 64 KiB/,
   )
 })
+
+test('round-trips through the real Rust sidecar with the isolated process boundary', async () => {
+  const hostExecutable = resolve(
+    'crates',
+    'bob-capability-host',
+    'target',
+    'debug',
+    process.platform === 'win32' ? 'bob-capability-host.exe' : 'bob-capability-host',
+  )
+
+  const result = await runPlanningRequest(hostExecutable, {
+    activeId: 'current',
+    items: [
+      { id: 'urgent', kind: 'task', priority: 'high', due: 'Today', status: 'planned' },
+      { id: 'current', kind: 'task', priority: 'low', due: null, status: 'planned' },
+      { id: 'doing', kind: 'task', priority: 'normal', due: null, status: 'doing' },
+    ],
+  })
+
+  assert.deepEqual(result, {
+    nextId: 'current',
+    focusIds: ['current', 'doing', 'urgent'],
+  })
+})
