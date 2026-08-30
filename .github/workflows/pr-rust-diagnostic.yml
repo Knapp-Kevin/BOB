@@ -27,6 +27,11 @@ jobs:
           toolchain: "1.88"
           components: rustfmt, clippy
 
+      - name: Install Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Cargo format check
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
