@@ -182,7 +182,10 @@ mod tests {
     fn rejects_duplicate_and_unknown_external_values() {
         let duplicate = PlanningRequest {
             active_id: None,
-            items: vec![item("same", "planned", "normal", None), item("same", "planned", "normal", None)],
+            items: vec![
+                item("same", "planned", "normal", None),
+                item("same", "planned", "normal", None),
+            ],
         };
         assert_eq!(
             validate_planning_request(&duplicate),
