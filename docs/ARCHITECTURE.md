@@ -1,7 +1,7 @@
 # Target Architecture
 
 **Status:** Accepted  
-**Related RFCs:** RFC-0001, RFC-0002, RFC-0003; RFC-0004 (Proposed)  
+**Related RFCs:** RFC-0001, RFC-0002, RFC-0003, RFC-0004  
 **Related decisions:** ADR-0006
 
 ## Architectural objective
@@ -14,50 +14,66 @@ The first-alpha Gemini Developer API Free path proved the inference, credential,
 
 ## Core invariant
 
-> **B.O.B. is the agent. Models, inference runtimes, provider APIs/CLIs, and tools are capabilities behind B.O.B.**
+> **B.O.B. is the agent. Models, inference runtimes, provider APIs/CLIs, harnesses, and tools are capabilities behind B.O.B.**
 
 The user has one point of contact in the standalone product: B.O.B. Removing any single inference adapter must leave B.O.B. buildable, launchable, state-safe, and usefully deterministic.
 
-ADR-0006 clarifies the deployment consequence: the standalone product invariant does not require harness-neutral B.O.B. capabilities to remain physically coupled to the Tauri desktop host. Another host may consume bounded B.O.B. capabilities without silently becoming the canonical B.O.B. product or state owner.
+ADR-0006 clarifies the deployment consequence: the standalone product invariant does not require harness-neutral B.O.B. capabilities to remain physically coupled to the Tauri desktop host. Another first-party host may run B.O.B.-owned portable semantics without becoming their owner or silently replacing B.O.B. state, policy, authority, continuity, or identity.
+
+### B.O.T. anti-pattern
+
+**B.O.T.** means **Bag of Tools**: an agent-like aggregation of models, tools, plugins, runtimes, or integrations without coherent ownership of identity, state, continuity, authority, policy, and user experience.
+
+B.O.B. must not collapse into a B.O.T. A harness can offer many capabilities, but capability availability is not B.O.B. authority. If removing the installed tools/providers leaves no meaningful B.O.B. identity or deterministic behavior behind, the architecture has drifted into a B.O.T.
 
 ## Host portability boundary
 
-B.O.B. uses a **portable capability core + host adapters** direction.
+B.O.B. uses a **portable capability core + first-party host adapters** architecture.
 
-```mermaid
-flowchart TB
-    PORTABLE[B.O.B. portable capability contracts\nplanning · proposals · context · policy types]
-
-    DESKTOP[B.O.B. Desktop Host\nTauri + Rust]
-    DEEPSEEK[Future B.O.B.-owned\nDeepSeek Harness adapter]
-    QOR[Future B.O.B.-owned\nQOR Agent adapter]
-
-    DESKTOP --> PORTABLE
-    DEEPSEEK --> PORTABLE
-    QOR --> PORTABLE
-
-    DESKTOP --> STATE[(SQLite canonical state)]
-    DESKTOP --> SECRET[OS secret store]
-    DESKTOP --> INFER[Inference/runtime port]
-
-    INFER --> GEMINI[Gemini API]
-    INFER --> OLLAMA[Ollama compatibility]
-    INFER --> GG[GG-CORE\nRust or authenticated local IPC]
+```text
+                         B.O.B. portable core
+                     planning · policy · proposals
+                                ^
+                                |
+                 +--------------+--------------+
+                 |                             |
+          B.O.B. Desktop Host          B.O.B. DeepSeek Host
+             Tauri + Rust                Cordis plugin edge
+                 |                             |
+          SQLite · keyring              bounded host protocol
+                 |                             |
+          inference/runtime port         bob-capability-host
+                 |
+        Gemini · Ollama · GG-CORE · other allowed runtime
 ```
 
 Dependency rules:
 
 - harness-neutral B.O.B. definitions do not depend on Tauri, DeepSeek Harness, QOR Agent, Cloudflare, GG-CORE, or a concrete inference provider;
-- the desktop host and external-harness adapters depend inward on B.O.B.-owned definitions;
-- external-harness dependencies terminate inside their B.O.B.-owned adapter boundary;
-- the first DeepSeek integration is a proving adapter, not a decision to make DeepSeek Harness part of B.O.B. core;
+- the desktop host and alternate-host adapters depend inward on B.O.B.-owned definitions;
+- target-harness dependencies terminate inside their B.O.B.-owned adapter boundary;
+- DeepSeek Harness is the first alternate first-party host: **B.O.B. is the agent; DeepSeek is the harness**;
+- the first DeepSeek tracer is stateless and exposes one deterministic B.O.B. planning capability rather than copying B.O.B. rules into JavaScript;
+- DeepSeek shell, filesystem, credential, job, subagent, and other tool authority is not imported into B.O.B. merely because the host exposes it;
 - QOR Agent integration uses its public extension seams when a concrete use case warrants it; Cloudflare is one possible QOR host/proving surface, not the definition of the QOR Agent harness;
 - GG-CORE sits below B.O.B.'s inference/runtime port and retains only its inference-execution responsibilities; B.O.B. retains state, authority, proposal, tool, privacy, and cost decisions;
 - portability work for these integrations is implemented in this repository and does not require source changes in the target repositories.
 
-The first external-harness mode should be stateless unless a later accepted contract explicitly defines canonical owner, namespace, migration, synchronization, recovery, deletion/export, and credential behavior. A host harness session does not become B.O.B. canonical state by implication.
+The first alternate-host mode is stateless. A later stateful B.O.B. hosted mode requires an accepted contract for canonical owner, namespace, migration, synchronization, recovery, deletion/export, credential separation, and B.O.B. identity. A host harness session does not become B.O.B. canonical state by implication.
 
-The exact portable crate/package boundary and DeepSeek cross-language bridge remain governed by Proposed RFC-0004 and must not be invented ahead of acceptance.
+RFC-0004 is Accepted and defines the current portable-host contract. Issue #118 owns the first bounded DeepSeek host tracer.
+
+## First portable implementation slice
+
+The first implemented portable capability is deterministic remaining-work planning:
+
+- `crates/bob-core` owns the narrow `PlanningRequest`, `PlanningItem`, `PlanProjection`, validation, and deterministic projection semantics;
+- the request intentionally carries only `activeId`, `id`, `kind`, `priority`, `due`, and `status` because planning does not need titles, estimates, handoff text, credentials, persistence metadata, or host session transcripts;
+- `src-tauri/src/planner.rs` maps canonical desktop state into that portable request while Tauri/SQLite orchestration remains in the desktop host;
+- `crates/bob-capability-host` exposes protocol version 1 over newline-delimited stdio JSON and validates host input before invoking B.O.B. planning;
+- `integrations/deepseek-harness` registers one bounded planning capability and invokes an explicit absolute B.O.B. host executable path with shell evaluation disabled.
+
+The tracer intentionally compiles the same portable planning source into the desktop path without changing the already-locked Tauri dependency graph during alpha qualification. Packaging hardening may replace this source-module inclusion with a normal Cargo path/workspace dependency once that lockfile/workspace change can be validated as its own bounded slice.
 
 ## System context
 
@@ -165,7 +181,7 @@ It does not surrender canonical state ownership to an underlying runtime. Model/
 
 The Rust core owns deterministic business behavior, including item lifecycle, planning, persistence orchestration, export/migration, proposal validation, preference handling, and authority/cost enforcement. These services remain useful when no inference runtime is available.
 
-ADR-0006 allows suitable deterministic services to move behind portable B.O.B.-owned contracts when a real second host requires them. Extraction does not change their semantics or transfer their authority to the consuming harness.
+ADR-0006 allows suitable deterministic services to move behind portable B.O.B.-owned contracts when a real second host requires them. The deterministic planner is the first such extracted semantic slice. Extraction does not change its semantics or transfer authority to the consuming harness.
 
 ### Inference router
 
@@ -198,7 +214,7 @@ GG-CORE, when integrated, implements this inference/runtime role through a suppo
 
 Tools are separate capabilities from inference/runtime identity. Future Delegate behavior may add bounded execution authority through explicit user grants. Ordinary Assist requests do not inherit shell, filesystem, repository, or broad external permissions.
 
-An external harness exposing a B.O.B. capability does not receive Delegate authority merely because it can invoke that capability. Any executable authority crossing a host-adapter boundary requires its own accepted contract.
+An alternate host exposing a B.O.B. capability does not receive Delegate authority merely because it can invoke that capability. Any executable authority crossing a host-adapter boundary requires its own accepted contract. The existence of host tools is not permission to turn B.O.B. into a B.O.T.
 
 ### Persistence
 
@@ -217,9 +233,9 @@ Persistence is local-first and single-user. The accepted contract is:
 
 The SQLite schema owns ordinary product state, not an open-ended advanced memory subsystem. Richer governed-memory behavior should preferentially integrate later with `MythologIQ-Labs-LLC/agent-memory` through an explicit contract.
 
-Stateless external-harness capability use does not create another B.O.B. database. Stateful embedding is deferred until a separate accepted state-ownership contract exists.
+Stateless alternate-host capability use does not create another B.O.B. database. Stateful hosting is deferred until a separate accepted state-ownership contract exists.
 
-See ADR-0004, ADR-0006, RFC-0003, and Proposed RFC-0004.
+See ADR-0004, ADR-0006, RFC-0003, and RFC-0004.
 
 ## Request flow
 
@@ -294,9 +310,9 @@ B.O.B. stores compact continuity needed to preserve the one-agent experience acr
 
 ## Authority model
 
-Authority belongs to B.O.B., not whichever runtime supplied inference. Assist may reason, summarize, organize, transform, and propose using an allowed adapter. Important state changes remain validated and previewed before application. Future Delegate behavior requires a separate bounded grant.
+Authority belongs to B.O.B., not whichever runtime or host supplies surrounding capability. Assist may reason, summarize, organize, transform, and propose using an allowed adapter. Important state changes remain validated and previewed before application. Future Delegate behavior requires a separate bounded grant.
 
-For an external harness consuming a stateless B.O.B. capability, the host owns its surrounding session/lifecycle while B.O.B. capability code owns only the semantics of its typed request/result boundary. Host authority is not imported into B.O.B. by default.
+For an alternate host consuming a stateless B.O.B. capability, the host owns its surrounding session/lifecycle while B.O.B. capability code owns the semantics of its typed request/result boundary. Host authority is not imported into B.O.B. by default.
 
 ## Cost-policy boundary
 
@@ -317,7 +333,8 @@ B.O.B. degrades safely:
 - invalid model proposal: reject without changing canonical state;
 - persistence interruption: preserve user data and follow ADR-0004/RFC-0003 recovery semantics;
 - runtime/provider failure: isolate failure from canonical state;
-- external-harness adapter failure: isolate the adapter from standalone B.O.B. state and fail through a bounded typed error;
+- alternate-host adapter failure: isolate the adapter from standalone B.O.B. state and fail through a bounded typed error;
+- capability-host protocol mismatch or invalid input: fail closed without invoking the requested B.O.B. semantic operation;
 - future tool failure: return evidence/status without widening authority.
 
 ## Technology boundaries
@@ -325,7 +342,7 @@ B.O.B. degrades safely:
 Current direction:
 
 - Tauri 2 desktop shell as the current first-party standalone host;
-- Rust privileged application core with a future portable capability boundary defined by ADR-0006;
+- Rust privileged application core plus an implemented first portable planning slice under ADR-0006/RFC-0004;
 - framework-free TypeScript + Vite frontend;
 - Windows 11 x64 primary platform;
 - one B.O.B. agent identity in the standalone product;
@@ -333,9 +350,10 @@ Current direction:
 - OS-backed secret-store boundary;
 - provider-independent inference/runtime seams;
 - Gemini Developer API as an advanced optional current adapter;
-- future first-party external-harness adapters remain optional and live in this repository;
+- a bounded DeepSeek Harness first-party host tracer under `integrations/deepseek-harness`;
+- future additional first-party host adapters remain optional and live in this repository;
 - no required local HTTP inference server, Python runtime, vector database, peer-agent UX, plugin marketplace, or mandatory provider/harness client;
 - no direct UI access to native secrets, database, shell, or arbitrary filesystem;
 - no competing advanced-memory subsystem inside ordinary SQLite state.
 
-Future account-backed adapters, local inference, governed-memory integration, bounded tools, and external-harness adapters may extend these seams only under accepted product/architecture authority. Proposed RFC-0004 must be accepted before substantial portable-host implementation proceeds.
+Future account-backed adapters, local inference, governed-memory integration, bounded tools, stateful hosted B.O.B., and additional host adapters may extend these seams only under accepted product/architecture authority. RFC-0004 governs the current portable-host boundary.
