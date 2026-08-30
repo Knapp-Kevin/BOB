@@ -1,6 +1,5 @@
-use bob_core::planning::{
-    project_remaining_work, validate_planning_request, PlanProjection, PlanningRequest,
-};
+use bob_core::planning::{project_remaining_work, PlanProjection, PlanningRequest};
+use bob_core::validation::validate_planning_request;
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u32 = 1;
