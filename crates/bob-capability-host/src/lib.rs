@@ -36,7 +36,11 @@ struct ProtocolError {
 
 pub fn handle_line(line: &str) -> String {
     if line.len() > MAX_MESSAGE_BYTES {
-        return encode_error(None, "message_too_large", "request exceeds the 64 KiB protocol limit");
+        return encode_error(
+            None,
+            "message_too_large",
+            "request exceeds the 64 KiB protocol limit",
+        );
     }
 
     let request = match serde_json::from_str::<ProtocolRequest>(line) {
