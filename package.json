@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "validate:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml --locked",
-    "validate": "npm run build && npm run validate:rust",
+    "validate:portable": "cargo fmt --manifest-path crates/bob-core/Cargo.toml -- --check && cargo test --manifest-path crates/bob-core/Cargo.toml && cargo fmt --manifest-path crates/bob-capability-host/Cargo.toml -- --check && cargo test --manifest-path crates/bob-capability-host/Cargo.toml && node --test integrations/deepseek-harness/tests/protocol.test.mjs",
+    "validate": "npm run build && npm run validate:rust && npm run validate:portable",
     "package:windows": "cargo metadata --manifest-path src-tauri/Cargo.toml --locked --format-version 1 && cargo clean --manifest-path src-tauri/Cargo.toml -p bob && tauri build --bundles nsis",
     "tauri": "tauri"
   },
