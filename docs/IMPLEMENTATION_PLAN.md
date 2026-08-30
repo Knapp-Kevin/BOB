@@ -2,24 +2,27 @@
 
 **Status:** Active sequencing context  
 **Product stage:** **Alpha Product**  
-**Objective:** Qualify the current landed Alpha Product through truthful native Windows recovery, packaging, and convergence evidence, then continue into the next already-authorized runtime and portability frontiers without speculative widening.
+**Objective:** Qualify the landed desktop Alpha Product through truthful native Windows recovery, packaging, and convergence evidence while allowing the explicitly authorized, disjoint DeepSeek host tracer to prove B.O.B.'s portable-host boundary without weakening those gates.
 
 ## Strategy
 
 The revival architecture is no longer hypothetical. `master` contains the Tauri 2 + Rust application foundation, Rust-owned SQLite state, Today/Inbox/Chat/Settings, deterministic planning, B.O.B. Assist/proposal validation, protected credentials, recovery/export foundations, accessibility preferences, provider-independent runtime policy, an advanced optional Gemini API adapter, a bounded Ollama tracer, locked Windows packaging, and hosted rendered diagnostics.
 
-B.O.B. is now classified as an **Alpha Product**. The remaining native Windows work is alpha release qualification, not pre-alpha feature construction. Implementation follows the live Wayfinder **build frontier**, not a pre-build phase gate. Consequential unresolved decisions block only work that depends on them. Safe disjoint implementation, review, validation, security/privacy hardening, packaging/readiness work, documentation reconciliation, and blocker removal should continue.
+B.O.B. is classified as an **Alpha Product**. The remaining native Windows work is alpha release qualification, not pre-alpha feature construction. Implementation follows the live Wayfinder build frontier plus accepted RFC/ADR authority and explicit owner sequencing decisions. Consequential unresolved decisions block only work that depends on them. Safe disjoint implementation, review, validation, security/privacy hardening, packaging/readiness work, documentation reconciliation, and blocker removal should continue.
 
 Architectural invariant:
 
-> **B.O.B. is the agent. Models, inference runtimes, provider APIs/CLIs, and tools are capabilities behind B.O.B.**
+> **B.O.B. is the agent. Models, inference runtimes, provider APIs/CLIs, host harnesses, and tools are capabilities behind B.O.B.**
 
-ADR-0006 additionally permits genuinely harness-neutral B.O.B. capabilities to become portable behind B.O.B.-owned typed contracts without transferring standalone product identity, state, or authority to another host.
+ADR-0006 and Accepted RFC-0004 permit genuinely harness-neutral B.O.B. capabilities to run behind multiple first-party hosts without transferring B.O.B. semantic ownership, state rules, identity, or authority to the host.
 
-## Governing maps
+**B.O.T.** means **Bag of Tools**: an agent-like aggregate of capabilities without coherent identity, state, continuity, authority, policy, and user experience. B.O.B. must not collapse into a B.O.T.
 
-- **#30:** alpha qualification waypoint and current executable-readiness owner;
+## Governing maps and active owners
+
+- **#30:** desktop alpha qualification waypoint and executable-readiness owner;
 - **#79:** provider-independent inference and account onboarding;
+- **#118:** bounded first DeepSeek host tracer under the explicit 2026-08-30 owner sequencing override;
 - **#86:** calm primary workflow and progressive disclosure, **completed** after Settings, Today, Inbox, and Chat convergence landed with rendered evidence.
 
 Closed/completed maps remain settled authority where relevant but do not remain active implementation owners forever.
@@ -38,19 +41,19 @@ Current `master` includes, at minimum:
 - first non-user-facing Ollama tracer behind that contract;
 - calm normal-mode Settings, Today, Inbox, and Chat presentation from merged PRs #89, #93, and #106;
 - dependency-free hosted rendered diagnostics for normal/minimum window sizes, reduced-information mode, larger text, reduced motion, keyboard focus, advanced Gemini setup, and bounded recovery fixture states;
-- committed npm/Cargo lockfiles and the accepted targeted-clean Windows NSIS package-build path.
+- committed desktop npm/Cargo lockfiles and the accepted targeted-clean Windows NSIS package-build path.
 
 These are current implementation surfaces, not future phases.
 
-## Active alpha qualification frontier
+## Primary alpha qualification frontier
 
 ### 1. Finish startup recovery acceptance
 
-Issue #85 and draft PR #103 own the fail-closed user-reachable startup recovery surface. PR #103 is the sole open product implementation PR for this frontier.
+Issue #85 and draft PR #103 own the fail-closed user-reachable startup recovery surface.
 
 The current recovery implementation provides a restricted recovery mode before ordinary commands run, preserves unreadable/corrupt canonical state, discovers only B.O.B.-managed backup candidates, previews candidates through the governed restore boundary, retains bounded candidate metadata, reports unusable candidates without destructive guessing, and provides a real application-process retry/restart path.
 
-Hosted frontend, Windows Rust, and rendered recovery diagnostics are green on the current exact branch head recorded by the PR. They do **not** replace remaining native Windows 11 x64 obligations:
+Hosted frontend, Windows Rust, and rendered recovery diagnostics are green on the exact branch heads recorded by that PR. They do **not** replace remaining native Windows 11 x64 obligations:
 
 - corrupt canonical SQLite visibly enters recovery rather than exiting silently;
 - healthy and invalid/corrupt managed backups exercise the real preview path;
@@ -82,11 +85,11 @@ The checkpoint must answer:
 - whether any in-scope consequential uncertainty would force the next implementation agent to invent policy;
 - whether the correct next frontier is provider promotion, a newly exposed defect, or another already-authorized readiness action.
 
-Do not call the integrated alpha build release-qualified from merged-PR count or hosted CI alone.
+Do not call the integrated desktop alpha build release-qualified from merged-PR count or hosted CI alone.
 
 ### 4. Promote one already-authorized inference path with native evidence
 
-Only after the alpha qualification/convergence frontier is reconciled should Wayfinder #79 become the primary build frontier again.
+After the desktop qualification/convergence frontier is reconciled, Wayfinder #79 becomes the primary provider build frontier again.
 
 Current provider/runtime rules:
 
@@ -100,6 +103,69 @@ Current provider/runtime rules:
 
 Promote **one** already-authorized path with real native evidence. Do not respond to a cleaner queue by inventing another adapter or fake provider controls.
 
+## Parallel bounded portability frontier: issue #118 / draft PR #119
+
+On 2026-08-30 the repository owner explicitly overrode the prior sequencing rule for one disjoint tracer. The override permits #118 to proceed before desktop alpha convergence provided the slice has no ownership overlap with #103/#115 and does not weaken or claim satisfaction of their native acceptance gates.
+
+The target relationship is:
+
+> **B.O.B. is the agent. DeepSeek is the harness.**
+
+This is not a parallel B.O.B. implementation and not a Bag-of-Tools facade.
+
+### QOR/CoreLogic planning result
+
+The QOR planning/audit pass resolved the first implementation slice as a small vertical proof rather than a platform migration:
+
+1. **Portable planning semantics:** extract only the deterministic remaining-work projection and its minimum input/result vocabulary.
+2. **Desktop conformance:** keep Tauri/SQLite state ownership in the desktop host and map canonical work into the same portable semantic source.
+3. **Bounded process protocol:** expose protocol version 1 through a one-request Rust stdio host with message bounds, request identity, explicit method/version checks, and fail-closed external-input validation.
+4. **Thin DeepSeek edge:** register exactly one planning tool that invokes an explicit absolute sidecar path with shell evaluation disabled.
+5. **No state or authority import:** do not create alternate-host persistence or inherit DeepSeek filesystem, shell, credentials, jobs, subagents, or arbitrary tools.
+6. **Compatibility isolation:** pin/document the current DeepSeek developer-preview target and keep every Cordis/DeepSeek type inside `integrations/deepseek-harness`.
+
+The adversarial audit recorded **PASS** after tightening executable configuration from an arbitrary command to an explicit absolute executable path.
+
+### Current #119 implementation shape
+
+The feature branch contains:
+
+- `crates/bob-core`: `PlanningRequest`, `PlanningItem`, `PlanProjection`, validation, and deterministic ordering/capping semantics;
+- `src-tauri/src/planner.rs`: canonical-state projection into the same portable planning source while persistence and mutation remain Tauri/Rust-host responsibilities;
+- `crates/bob-capability-host`: bounded protocol version 1 plus real process-level stdin/stdout round-trip test;
+- `integrations/deepseek-harness`: one `bob_plan_remaining_work` Cordis tool adapter, compatibility metadata, explicit absolute `hostPath`, cancellation, response-size bound, request/version validation, and no shell evaluation;
+- `README.md`, `docs/ARCHITECTURE.md`, ADR-0006, RFC-0004, roadmap, and this plan reconciled with the host-portability and B.O.T. rules.
+
+The tracer intentionally compiles the portable planning source into the desktop planner without changing the existing locked desktop Cargo dependency graph. That source inclusion is a temporary tracer mechanism, not the desired mature package boundary.
+
+### #119 completion condition
+
+The bounded implementation slice is complete when the exact PR head demonstrates:
+
+- existing locked desktop Rust fmt/Clippy/tests remain green;
+- frontend production build remains green;
+- `bob-core` formatting/tests pass independently;
+- capability-host formatting/tests and the real process-level stdio round trip pass;
+- DeepSeek protocol-edge tests pass under pinned Node;
+- compare against #103 and #115 remains zero changed-file overlap;
+- documentation truthfully distinguishes the stateless tracer from production-ready stateful hosted B.O.B.
+
+Do **not** claim from these checks that the plugin has been installed/unloaded successfully against DeepSeek Harness. That is the next compatibility-hardening evidence layer.
+
+### Portability hardening after the tracer
+
+Further portability work is not automatically authorized merely because #119 exists. Evidence from the tracer should drive the next bounded slice. Likely sequence:
+
+1. replace source inclusion with a normal Cargo dependency/workspace boundary and lock the portable dependency graph;
+2. package/discover `bob-capability-host` without shell command interpretation or arbitrary executable discovery;
+3. install/unload against the pinned DeepSeek Harness target and validate plugin lifecycle, cancellation, malformed config, and adapter removal;
+4. add a compatibility matrix only when more than one real harness version earns support;
+5. design a fuller DeepSeek B.O.B. profile/identity surface only after the adapter boundary proves stable enough to justify it;
+6. define **stateful hosted B.O.B.** only after explicit canonical state owner, namespace, migration/versioning, synchronization/conflicts, recovery, deletion/export, credential separation, and identity rules are accepted;
+7. consider QOR Agent or additional host adapters only when a concrete use case creates conformance pressure.
+
+GG-CORE remains an inference/runtime integration below B.O.B.'s inference port. QOR Agent remains an optional harness integration target through supported public seams. Neither becomes B.O.B.'s canonical state or product identity.
+
 ## Completed calm-workflow frontier
 
 Wayfinder #86 is complete:
@@ -110,29 +176,11 @@ Wayfinder #86 is complete:
 
 Future presentation defects should receive new bounded owners rather than reopening completed slices by default.
 
-## Authorized post-alpha portability frontier
-
-ADR-0006 and completed design-intent issue #109 establish the future **portable capability core + first-party host adapters** direction. Proposed RFC-0004 owns unresolved implementation choices.
-
-Substantial portability implementation begins only after alpha stabilization/convergence and RFC-0004 acceptance.
-
-Expected bounded sequence:
-
-1. classify current Rust modules against the portable/host-specific boundary without moving code;
-2. extract one deterministic vertical slice that can run without Tauri;
-3. define only the host ports/conformance fixtures that slice actually requires;
-4. move the desktop path onto the same contract and prove no standalone regression;
-5. implement a thin B.O.B.-owned DeepSeek Harness tracer against a pinned supported harness version;
-6. harden compatibility, lifecycle/cancellation, packaging, failure behavior, and adapter removal;
-7. consider QOR Agent or additional adapters only when they prove a concrete requirement.
-
-GG-CORE remains an inference/runtime integration below B.O.B.'s inference port. QOR Agent remains an optional harness integration target through supported public seams. Neither becomes B.O.B.'s canonical state or product identity.
-
 ## Continuous tracer-bullet model
 
 Select one bounded slice per governed cycle when possible. A good slice:
 
-- is authorized by accepted product/architecture/governance or a current Wayfinder build-frontier owner;
+- is authorized by accepted product/architecture/governance, a current Wayfinder build-frontier owner, or an explicit owner disposition;
 - has no overlapping active PR;
 - produces a user-visible, security, validation, recovery, documentation, or executable-readiness improvement;
 - fits one fresh coding-agent context;
@@ -149,7 +197,7 @@ The following require later accepted authority or current Wayfinder convergence 
 
 - additional account-backed runtime adapters beyond established supported integration facts;
 - broader user-facing local inference beyond the accepted `LocalRuntimeAdapter` direction and already-landed tracer work;
-- stateful B.O.B. embedding in an external harness before explicit state ownership, namespace, migration, recovery, synchronization, deletion/export, and credential semantics are accepted;
+- stateful B.O.B. hosting in DeepSeek or another external harness before explicit state ownership, namespace, migration, recovery, synchronization, deletion/export, credential, and identity semantics are accepted;
 - mobile clients and cloud/shared continuity;
 - Delegate/tool execution beyond bounded accepted authority;
 - generalized RAG/knowledge-center infrastructure;
@@ -165,6 +213,6 @@ Do not keep obsolete runtime implementations in the active tree for sentimental 
 
 ## Validation ownership
 
-`docs/VALIDATION.md` is the accepted Windows-first alpha qualification evidence contract. Implementing agents own truthful exact-head validation. Missing tooling or unavailable native/provider environments are explicit remaining debt, not passing evidence.
+`docs/VALIDATION.md` is the accepted Windows-first desktop alpha qualification evidence contract. Implementing agents own truthful exact-head validation. Portable-host tests supplement that contract for #118; they do not redefine native Windows acceptance. Missing tooling or unavailable native/provider environments are explicit remaining debt, not passing evidence.
 
 Repository CI remains deliberately small unless a stronger gate is justified by demonstrated risk.

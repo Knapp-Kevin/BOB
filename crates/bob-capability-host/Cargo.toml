@@ -1,0 +1,12 @@
+[package]
+name = "bob-capability-host"
+version = "0.0.1"
+description = "Bounded stdio host for portable B.O.B. capabilities"
+authors = ["Kevin Knapp"]
+edition = "2021"
+rust-version = "1.88"
+
+[dependencies]
+bob-core = { path = "../bob-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

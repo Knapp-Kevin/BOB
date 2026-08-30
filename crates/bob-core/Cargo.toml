@@ -1,0 +1,10 @@
+[package]
+name = "bob-core"
+version = "0.0.1"
+description = "Portable B.O.B. capability core"
+authors = ["Kevin Knapp"]
+edition = "2021"
+rust-version = "1.88"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

@@ -2,14 +2,13 @@ use crate::state::{Store, WorkState};
 use serde::Serialize;
 use tauri::State;
 
-const MAX_FOCUS_ITEMS: usize = 3;
+#[path = "../../crates/bob-core/src/planning.rs"]
+mod portable_planning;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanProjection {
-    pub next_id: Option<String>,
-    pub focus_ids: Vec<String>,
-}
+pub use portable_planning::PlanProjection;
+use portable_planning::{
+    project_remaining_work as project_portable_work, PlanningItem, PlanningRequest,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,51 +18,22 @@ pub struct ReplanResult {
 }
 
 pub fn project_remaining_work(state: &WorkState) -> PlanProjection {
-    let active_id = state.active_id.as_deref();
-    let mut candidates = state
-        .items
-        .iter()
-        .enumerate()
-        .filter(|(_, item)| {
-            item.kind == "task" && matches!(item.status.as_str(), "doing" | "planned")
-        })
-        .collect::<Vec<_>>();
+    let request = PlanningRequest {
+        active_id: state.active_id.clone(),
+        items: state
+            .items
+            .iter()
+            .map(|item| PlanningItem {
+                id: item.id.clone(),
+                kind: item.kind.clone(),
+                priority: item.priority.clone(),
+                due: item.due.clone(),
+                status: item.status.clone(),
+            })
+            .collect(),
+    };
 
-    candidates.sort_by_key(|(index, item)| {
-        let active_rank = if active_id == Some(item.id.as_str()) {
-            0
-        } else {
-            1
-        };
-        let status_rank = if item.status == "doing" { 0 } else { 1 };
-        let today_rank = if item
-            .due
-            .as_deref()
-            .is_some_and(|due| due.eq_ignore_ascii_case("today"))
-        {
-            0
-        } else {
-            1
-        };
-        let priority_rank = match item.priority.as_str() {
-            "high" => 0,
-            "normal" => 1,
-            "low" => 2,
-            _ => 3,
-        };
-        (active_rank, status_rank, today_rank, priority_rank, *index)
-    });
-
-    let focus_ids = candidates
-        .iter()
-        .take(MAX_FOCUS_ITEMS)
-        .map(|(_, item)| item.id.clone())
-        .collect::<Vec<_>>();
-
-    PlanProjection {
-        next_id: focus_ids.first().cloned(),
-        focus_ids,
-    }
+    project_portable_work(&request)
 }
 
 #[tauri::command]
