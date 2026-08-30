@@ -1,22 +1,27 @@
 # RFC-0004: Portable B.O.B. capability and host-adapter contract
 
-**Status:** Proposed  
-**Date:** 2026-08-23  
-**Related:** ADR-0006, issue #109
+**Status:** Accepted  
+**Proposed:** 2026-08-23  
+**Accepted:** 2026-08-30  
+**Related:** ADR-0006, issues #109 and #118
 
 ## Summary
 
-Define the smallest architecture that lets B.O.B. remain a standalone Tauri/Rust product while selected harness-neutral B.O.B. capabilities can also be consumed from another agent harness through first-party adapters maintained in this repository.
+Define the smallest architecture that lets B.O.B. remain a standalone Tauri/Rust product while the same B.O.B.-owned portable semantics can also run behind alternate first-party hosts.
 
-DeepSeek Harness is the first proving target. QOR Agent and GG-CORE provide additional conformance pressure, but this RFC does not require changes to either repository.
+DeepSeek Harness is the first proving host. The target relationship is explicit:
+
+> **B.O.B. is the agent. DeepSeek is the harness.**
+
+DeepSeek does not become the B.O.B. semantic core, and B.O.B. does not become a collection of DeepSeek tools. A thin DeepSeek/Cordis edge adapts the host to B.O.B.-owned portable contracts. QOR Agent and GG-CORE provide additional conformance pressure, but this RFC does not require changes to either repository.
 
 ## Goals
 
 - isolate deterministic B.O.B. behavior from desktop-host plumbing where the behavior is genuinely portable;
-- preserve standalone B.O.B. canonical-state, identity, authority, privacy, and cost boundaries;
-- let external harness adapters depend on B.O.B.-owned capability definitions rather than duplicate B.O.B. semantics;
+- preserve B.O.B.-owned identity, state, authority, privacy, continuity, and cost-policy boundaries across hosts;
+- let host adapters depend on B.O.B.-owned capability definitions rather than duplicate B.O.B. semantics;
 - keep harness-specific compatibility churn at the adapter edge;
-- prove the design with one concrete second host before generalizing it;
+- prove the design with one concrete alternate host before generalizing it;
 - keep the extraction small enough that it does not become a framework rewrite in ceremonial clothing.
 
 ## Non-goals
@@ -28,26 +33,39 @@ DeepSeek Harness is the first proving target. QOR Agent and GG-CORE provide addi
 - implementing Delegate authority in this RFC;
 - replacing QOR Agent, DeepSeek Harness, or GG-CORE;
 - requiring source changes outside `Knapp-Kevin/BOB`;
-- choosing a cross-language bridge before a tracer implementation compares the practical options.
+- treating every capability exposed by a host as B.O.B. authority;
+- choosing N-API or WASM before the stdio tracer creates evidence that they are needed.
 
-## Proposed logical layers
+## B.O.T. anti-pattern
+
+**B.O.T.** means **Bag of Tools**: an agent-like aggregation of models, tools, plugins, runtimes, or integrations without coherent ownership of identity, state, continuity, authority, policy, and user experience.
+
+B.O.B. must not collapse into a B.O.T. A host may offer many capabilities, but B.O.B. remains responsible for deciding which capabilities belong inside its contract and which authority is actually granted.
+
+A useful architectural test is:
+
+> If removing the installed tools/providers leaves no meaningful B.O.B. behavior or identity behind, the system has become a B.O.T., not B.O.B.
+
+## Logical layers
 
 ### 1. Portable B.O.B. domain/capability layer
 
-Candidate responsibilities are limited to behavior that can execute without a desktop window, SQLite implementation, OS keyring, network provider client, or target harness runtime:
+Responsibilities are limited to behavior that can execute without a desktop window, SQLite implementation, OS keyring, network provider client, or target harness runtime:
 
-- work-item/task domain operations;
+- work-item/task domain operations where genuinely host-neutral;
 - deterministic planning and replanning;
 - proposal schemas and validation;
 - bounded context/continuity transformations;
 - provider-neutral/runtime-neutral policy and capability types;
-- normalized result and failure types needed by these capabilities.
+- normalized result and failure types required by those capabilities.
 
-The extraction should be evidence-driven. A module does not become portable merely because moving it into a new crate makes the tree look architectural.
+The extraction is evidence-driven. A module does not become portable merely because moving it into a new crate makes the tree look architectural.
+
+The first implemented slice is narrower than canonical work state: deterministic planning consumes only `activeId` plus planning items containing `id`, `kind`, `priority`, `due`, and `status`. Titles, estimates, handoff text, credentials, and persistence metadata are deliberately excluded.
 
 ### 2. Ports
 
-Portable capabilities may depend on narrow B.O.B.-owned traits/interfaces for host services that cannot remain pure. Initial candidates:
+Portable capabilities may depend on narrow B.O.B.-owned traits/interfaces for host services that cannot remain pure. Candidate ports include:
 
 - `StatePort` or smaller domain-specific persistence ports;
 - `InferencePort` for normalized inference/runtime use;
@@ -58,9 +76,9 @@ Portable capabilities may depend on narrow B.O.B.-owned traits/interfaces for ho
 
 Prefer several small role-specific ports over one `BobHost` object that quietly becomes an operating system.
 
-### 3. Standalone desktop host
+### 3. B.O.B. Desktop Host
 
-The existing B.O.B. application implements those ports with its current authorities:
+The existing Tauri application is the first-party desktop host and retains its current authorities:
 
 - Tauri lifecycle and command boundary;
 - Rust-owned SQLite canonical state;
@@ -72,9 +90,17 @@ The existing B.O.B. application implements those ports with its current authorit
 
 The desktop host remains independently buildable without DeepSeek Harness or QOR Agent dependencies.
 
-### 4. External harness adapters
+### 4. B.O.B. DeepSeek Host
 
-Each adapter is first-party B.O.B. code under a dedicated repository subtree, for example:
+DeepSeek Harness is the first alternate first-party host. DeepSeek-specific code lives under `integrations/deepseek-harness/` and terminates all Cordis/DeepSeek types at that boundary.
+
+The first tracer is deliberately stateless and exposes one deterministic B.O.B. planning capability. It proves the dependency direction before introducing hosted state, richer identity composition, or execution authority.
+
+A later **stateful B.O.B. hosted mode** may present a fuller B.O.B. experience through DeepSeek, but it must keep B.O.B.-owned canonical state and explicitly define synchronization, migration, identity, recovery, and authority. DeepSeek session state does not become canonical B.O.B. state by implication.
+
+### 5. Other external host adapters
+
+Additional first-party adapters may live in dedicated repository subtrees, for example:
 
 ```text
 integrations/
@@ -82,13 +108,13 @@ integrations/
   qor-agent/
 ```
 
-The exact path is implementation detail. The important rule is that target-harness dependencies terminate inside the adapter boundary.
+The important rule is that target-harness dependencies terminate inside the adapter boundary.
 
 ## DeepSeek Harness design lesson
 
-DeepSeek Harness currently organizes extensions around plugin-provided services and explicit dependency injection. Its package guidance separates **Service Definition**, **Service Provider**, and **Consumer**, and directs extension plugins to depend on service definitions rather than concrete providers.
+DeepSeek Harness organizes extensions around plugin-provided services and explicit dependency injection. Its package guidance separates **Service Definition**, **Service Provider**, and **Consumer**, and directs extension plugins to depend on service definitions rather than concrete providers.
 
-B.O.B. should borrow that dependency principle without adopting Cordis as its internal architecture:
+B.O.B. borrows that dependency principle without adopting Cordis as its internal architecture:
 
 ```text
 B.O.B. capability definition
@@ -97,93 +123,68 @@ B.O.B. capability definition
 B.O.B. implementation/provider
            ^
            |
-standalone host or harness adapter consumer
+B.O.B. desktop host or alternate host adapter
 ```
 
 DeepSeek-specific plugin registration, service injection, effects/lifecycle, commands, tool exposure, and version compatibility belong only in the DeepSeek adapter.
 
-Because DeepSeek Harness is currently a developer preview and explicitly expects compatibility-breaking changes, the adapter should:
+Because DeepSeek Harness is currently developer preview and explicitly expects compatibility-breaking changes, the adapter must:
 
-- pin the tested compatible DeepSeek package range;
+- pin/document the tested compatible DeepSeek target;
 - expose compatibility metadata;
-- fail clearly on unsupported versions where practical;
-- include contract/integration tests that exercise only the adapter boundary;
+- fail clearly on unsupported configuration where practical;
+- include contract/integration tests that exercise the adapter boundary;
 - avoid leaking Cordis service types into B.O.B. portable Rust APIs.
 
-## DeepSeek cross-language bridge options
+The first tracer is grounded against DeepSeek Harness `0.1.2-alpha.2` at source commit `0a53fb55bea101816fa226bb964ae2bed71c343b`. That is a compatibility target, not a promise of future-version compatibility.
 
-The authoritative B.O.B. capability implementation is expected to remain Rust-first. DeepSeek plugins are TypeScript/Cordis based, so a bridge is required.
+## DeepSeek cross-language bridge
 
-### Option A: local stdio or local JSON-RPC sidecar
+The authoritative B.O.B. capability implementation remains Rust-first. DeepSeek plugins are TypeScript/JavaScript/Cordis based, so a bridge is required.
 
-**Shape:** the DeepSeek plugin starts or connects to a B.O.B.-owned local capability process and exchanges versioned typed requests/events over stdio or a local authenticated transport.
+### Accepted first tracer: local stdio JSON protocol
 
-**Advantages**
+The DeepSeek plugin starts a B.O.B.-owned local capability process and exchanges one versioned JSON request/response per invocation over stdio.
+
+Advantages:
 
 - language/runtime isolation;
 - no Node native ABI packaging requirement;
-- target-harness churn stays in TypeScript;
-- Rust core can be tested independently;
-- process lifecycle and cancellation are explicit.
+- target-harness churn stays at the JavaScript edge;
+- Rust capability code tests independently;
+- process lifecycle and cancellation are explicit;
+- the transport can be removed later without changing B.O.B. semantics.
 
-**Costs**
+Costs:
 
 - process packaging/startup complexity;
 - protocol/versioning work;
-- must prevent orphaned processes and ambiguous state ownership.
+- process cleanup must be explicit;
+- state ownership must remain unambiguous.
 
-**Current recommendation:** first tracer candidate because it is replaceable and minimizes coupling while DeepSeek's API is young.
+The first plugin accepts an explicit absolute executable path and launches it directly with shell evaluation disabled. It does not accept an arbitrary shell command or auto-discover executables.
 
-### Option B: Node native binding
+### Deferred option: Node native binding
 
-**Shape:** expose the portable Rust capability layer through N-API or another maintained Node binding.
+N-API or another maintained binding may be evaluated only after the stdio tracer establishes real workload or latency requirements. Native packaging per platform/architecture and tighter process privilege sharing are not justified yet.
 
-**Advantages**
+### Deferred option: WebAssembly/component boundary
 
-- low-latency in-process calls;
-- compact runtime topology.
+WASM remains a future option for suitable pure capabilities. It must not distort Rust code or invent state/filesystem/secret host semantics merely to satisfy a speculative deployment form.
 
-**Costs**
+## First DeepSeek capability surface
 
-- native packaging per platform/architecture;
-- Node ABI/tooling complexity;
-- tighter process privilege sharing;
-- greater release burden before the integration is proven valuable.
+The accepted tracer exposes exactly one model-facing capability:
 
-**Current disposition:** compare after the sidecar tracer establishes real workload and performance requirements.
+1. `bob_plan_remaining_work` maps bounded DeepSeek tool input to B.O.B.'s portable deterministic planning request and returns `nextId` plus the bounded `focusIds` set.
 
-### Option C: WebAssembly/component boundary
+The adapter does not duplicate planning rules in JavaScript. It does not expose or inherit filesystem, shell, credential, job, subagent, repository, or arbitrary host-tool authority.
 
-**Shape:** compile suitable portable B.O.B. capabilities to WASM and load them from the adapter.
-
-**Advantages**
-
-- portable sandboxable artifact;
-- clean capability boundary for pure logic.
-
-**Costs**
-
-- state, filesystem, secrets, async runtime, and native integration require additional host design;
-- could distort current Rust code merely to satisfy a speculative deployment form.
-
-**Current disposition:** future option, not the first proving route.
-
-## Proposed DeepSeek capability surface
-
-The first adapter should expose a deliberately small subset of B.O.B. capabilities rather than attempt to recreate the full desktop product.
-
-A sensible tracer set is:
-
-1. deterministic task decomposition/planning request;
-2. proposal validation for a typed B.O.B. work mutation;
-3. bounded reorientation/next-action assistance using host-supplied context;
-4. optional inference only through a declared B.O.B. `InferencePort`, not through hidden provider ownership.
-
-A plugin may surface those capabilities as DeepSeek services and/or model-facing tools according to the target harness's public conventions. The adapter must not silently grant filesystem, shell, credential, or repository authority.
+Additional B.O.B. capabilities require their own evidence and must preserve the B.O.T. guardrail.
 
 ## QOR Agent interaction
 
-QOR Agent already defines small public extension roles. A B.O.B.-owned QOR adapter should map only the role required by the product use case:
+QOR Agent defines small public extension roles. A B.O.B.-owned QOR adapter should map only the role required by the product use case:
 
 - portable B.O.B. deterministic behavior as registered Tool/Capability implementations;
 - B.O.B. policy narrowing as an Interceptor only when semantics align;
@@ -199,29 +200,19 @@ Cloudflare remains merely one possible QOR host/proving environment.
 
 GG-CORE belongs below B.O.B.'s inference/runtime port, not beside B.O.B. as another application state owner.
 
-Supported integration shapes may include:
+Supported integration shapes may include direct Rust embedding through GG-CORE's secure runtime facade or authenticated local IPC when process isolation is preferred.
 
-- direct Rust embedding through GG-CORE's secure runtime facade; or
-- authenticated local IPC when process isolation is preferred.
-
-B.O.B. remains responsible for:
-
-- deciding whether local inference is allowed;
-- selecting the runtime/model according to B.O.B. policy;
-- canonical work/continuity state;
-- proposal validation;
-- tool/delegation authority;
-- presenting results to the user/host.
+B.O.B. remains responsible for deciding whether local inference is allowed, selecting the runtime/model, canonical work/continuity state, proposal validation, tool/delegation authority, and presenting results to the user/host.
 
 GG-CORE remains responsible for contained model execution, its own runtime security boundary, and normalized inference output.
 
-## State model in external hosts
+## State model across hosts
 
 ### Stateless capability mode
 
-Preferred first mode. The host sends a bounded request and context; B.O.B. returns typed output. No persistent B.O.B. state is created by the adapter unless explicitly requested by a later accepted contract.
+This is the accepted first mode. The host sends a bounded request; B.O.B. returns typed output. No persistent B.O.B. state is created by the adapter.
 
-### Stateful capability mode
+### Stateful B.O.B. hosted mode
 
 Deferred. Before implementation it must specify:
 
@@ -232,21 +223,21 @@ Deferred. Before implementation it must specify:
 - synchronization/conflict behavior if more than one host touches the same logical work;
 - deletion/export/recovery semantics;
 - credential separation;
-- whether B.O.B. identity is actually being presented or only B.O.B. capabilities are embedded.
+- how the B.O.B. identity and product policy are presented through the host.
 
 No adapter may infer these answers from the host harness's session store.
 
 ## Compatibility contract
 
-The portable B.O.B. capability API and each external adapter version independently.
+The portable B.O.B. capability API and each alternate-host adapter version independently.
 
 Conceptually:
 
 ```text
-bob-capability-protocol: 0.x
+bob-capability-protocol: 1.x
 bob-core:                 0.x
-bob-deepseek-adapter:     0.x
-supported-deepseek-api:   explicit tested range
+bob-deepseek-host:        0.x
+supported-deepseek-api:   explicit tested target/range
 ```
 
 A target harness breaking its plugin API should require an adapter release, not a portable B.O.B. core rewrite.
@@ -259,62 +250,54 @@ A target harness breaking its plugin API should require an adapter release, not 
 - portable capabilities receive the minimum data needed for the request;
 - secrets do not cross the bridge unless a specific port contract requires a reference and accepted authority permits it;
 - adapters clean up processes/listeners/effects on unload or cancellation;
-- process bridges use bounded message sizes, version negotiation, timeouts, and explicit shutdown;
+- process bridges use bounded message sizes, protocol-version checks, request identity, and explicit process shutdown;
+- adapter executable paths are explicit and are never evaluated through a shell;
 - no adapter auto-discovers and executes arbitrary plugins merely because they exist on disk.
 
-## Proposed repository evolution
+## Repository evolution
 
-Do not perform all of this as one migration. The intended sequence is:
+The migration remains incremental:
 
-### Pass P0: boundary audit
+### P0: boundary audit — complete for the first tracer
 
-Classify current Rust modules as portable domain, host service, adapter, or presentation/desktop lifecycle. No code movement yet.
+The deterministic planner was selected because its ordering logic is pure and depends on a very small planning projection of canonical work.
 
-### Pass P1: extract one pure vertical slice
+### P1: extract one pure vertical slice — implemented in #118
 
-Create the minimum Rust crate/module boundary needed to run one deterministic B.O.B. capability without Tauri. Preserve current behavior with direct tests.
+`crates/bob-core` owns the planning request/result types and deterministic projection function. It has no Tauri, SQLite, credential, network-provider, or DeepSeek dependency.
 
-### Pass P2: formalize ports and conformance fixtures
+### P2: protocol/conformance fixture — implemented in #118
 
-Add only the ports required by the extracted slice and define versioned request/result fixtures.
+`crates/bob-capability-host` owns protocol version 1 and a process-level stdio test. External input is validated before planning.
 
-### Pass P3: keep desktop host green
+### P3: keep desktop host on the same semantic source — implemented in #118
 
-Move the existing desktop path onto the same portable contract and prove there is no standalone regression.
+The Tauri planner maps canonical work to the narrow portable planning request and compiles the same portable planning source rather than carrying a duplicate algorithm.
 
-### Pass P4: DeepSeek tracer adapter
+The tracer uses a source-module inclusion from the portable crate to avoid modifying the already-locked desktop dependency graph during active alpha qualification. A later packaging-hardening pass may convert this to a normal Cargo path dependency once the workspace/lockfile change can be validated without broadening the tracer.
 
-Build the thin plugin plus selected bridge, expose one or two B.O.B. capabilities, and validate lifecycle/cancellation/error behavior.
+### P4: DeepSeek tracer adapter — implemented in #118
 
-### Pass P5: harden compatibility and packaging
+`integrations/deepseek-harness` registers one planning tool and delegates to the Rust capability host. Compatibility is intentionally narrow and non-published while the Harness API remains developer preview.
 
-Pin/test DeepSeek compatibility, document installation, add removal/failure cases, and ensure the adapter can be omitted without affecting standalone builds.
+### P5: compatibility and packaging hardening — pending
 
-Only after these passes should additional B.O.B. capabilities or other harness adapters be considered.
+Before calling the integration generally installable, validate installation/unload against the pinned DeepSeek target, package/discover the Rust sidecar safely, add negative lifecycle cases, and ensure the adapter can be omitted without affecting standalone builds.
 
-## Acceptance criteria for this RFC
+Additional B.O.B. capabilities or host adapters should wait until this tracer creates evidence that they are needed.
 
-Before moving from Proposed to Accepted, implementation planning should confirm:
+## Validation expectations
 
-- the first portable capability slice;
-- the first DeepSeek-facing capability/service surface;
-- the cross-language tracer mechanism;
-- portable API versioning shape;
-- standalone desktop dependency direction;
-- state mode for the first adapter, expected to be stateless;
-- exact validation matrix and supported DeepSeek version range.
-
-## Validation expectations after acceptance
-
-A completed first DeepSeek integration should demonstrate:
+The first DeepSeek-host integration must demonstrate:
 
 1. portable B.O.B. tests pass without Tauri or DeepSeek installed;
 2. standalone desktop tests/builds continue to pass;
-3. DeepSeek adapter installs against the pinned supported harness version;
-4. the adapter can be enabled/disabled cleanly;
-5. one deterministic B.O.B. capability works end to end;
-6. cancellation/unload terminates adapter-owned work;
-7. malformed/oversized/unsupported protocol requests fail closed;
-8. no B.O.B. canonical desktop state or secrets are silently imported into the host harness;
-9. removing the adapter dependency leaves standalone B.O.B. unaffected;
-10. no external repository write is part of the integration procedure.
+3. the capability host executes one deterministic B.O.B. planning request end to end over stdio;
+4. malformed/oversized/unsupported protocol requests fail closed;
+5. the DeepSeek edge builds only bounded planning envelopes and validates response identity/version;
+6. cancellation terminates adapter-owned process work;
+7. no B.O.B. canonical desktop state or secrets are silently imported into the host harness;
+8. removing the adapter leaves standalone B.O.B. unaffected;
+9. no external repository write is part of the integration procedure.
+
+Pinned DeepSeek installation/unload validation is P5 release-hardening evidence and must not be claimed until actually executed.
