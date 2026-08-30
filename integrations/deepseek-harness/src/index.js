@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { runPlanningRequest } from './protocol.js'
 
@@ -8,6 +9,9 @@ export function apply(ctx, config = {}) {
   const hostPath = config.hostPath
   if (typeof hostPath !== 'string' || hostPath.trim().length === 0) {
     throw new Error('bob-deepseek-host-tracer requires config.hostPath')
+  }
+  if (!isAbsolute(hostPath)) {
+    throw new Error('bob-deepseek-host-tracer config.hostPath must be an absolute executable path')
   }
 
   ctx.tools.register(defineTool({
