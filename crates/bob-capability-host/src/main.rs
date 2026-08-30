@@ -13,7 +13,7 @@ fn main() -> io::Result<()> {
         handle_line(&"x".repeat(MAX_MESSAGE_BYTES + 1))
     } else {
         let request = String::from_utf8_lossy(&input);
-        handle_line(request.trim_end_matches(['\r', '\n']))
+        handle_line(request.trim_end_matches(|character| character == '\r' || character == '\n'))
     };
 
     let mut stdout = io::BufWriter::new(io::stdout().lock());
