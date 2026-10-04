@@ -1,10 +1,25 @@
 import "./styles.css";
 import { render } from "./controller";
 import { applyAccessibilityPreferences, applyPlanProjection, hydratePersistentWorkState, state } from "./model";
-import { loadAccessibilityPreferences, loadGeminiCredentialStatus, loadPersistentWorkState, planRemainingWork } from "./native";
+import { loadAccessibilityPreferences, loadGeminiCredentialStatus, loadPersistentWorkState, loadStartupStatus, planRemainingWork } from "./native";
 import { installAccessibilityPreferencePersistence } from "./preferences";
+import { renderStartupRecovery, renderStartupStatusUnavailable } from "./recovery";
 
 async function bootstrap() {
+  let startup: Awaited<ReturnType<typeof loadStartupStatus>>;
+  try {
+    startup = await loadStartupStatus();
+  } catch (error) {
+    console.error("Failed to confirm B.O.B. startup status", error);
+    renderStartupStatusUnavailable();
+    return;
+  }
+
+  if (startup.mode === "recoveryRequired") {
+    renderStartupRecovery(startup);
+    return;
+  }
+
   try {
     const [durable, preferences] = await Promise.all([
       loadPersistentWorkState(),
@@ -14,6 +29,8 @@ async function bootstrap() {
     if (preferences) applyAccessibilityPreferences(preferences);
   } catch (error) {
     console.error("Failed to load durable B.O.B. local state", error);
+    renderStartupStatusUnavailable();
+    return;
   }
 
   installAccessibilityPreferencePersistence();
