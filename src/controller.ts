@@ -62,7 +62,15 @@ async function runWorkMutation(
 }
 
 let chatQueue = Promise.resolve();
+const MAX_CHAT_BYTES = 8_000;
+const chatByteLength = (value: string) => new TextEncoder().encode(value).length;
+
 function pushConversation(text: string) {
+  if (!text.trim() || chatByteLength(text) > MAX_CHAT_BYTES) {
+    showToast("Message is too long. Keep it under 8,000 UTF-8 bytes.");
+    render();
+    return;
+  }
   // Serialize conversations so responses and durable history remain ordered.
   chatQueue = chatQueue.then(async () => {
     try {
