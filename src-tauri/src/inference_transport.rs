@@ -150,32 +150,44 @@ mod tests {
     #[test]
     fn denies_unapproved_models_before_network() {
         tauri::async_runtime::block_on(async {
-        let transport = InferenceTransport::new().unwrap();
-        let result = transport.generate(
-            &InferenceAuthorization::default(),
-            InferenceProvider::OpenRouter,
-            "unapproved/model",
-            "hello",
-            None,
-        ).await;
-        assert!(result.unwrap_err().to_string().contains("authorization denied"));
+            let transport = InferenceTransport::new().unwrap();
+            let result = transport
+                .generate(
+                    &InferenceAuthorization::default(),
+                    InferenceProvider::OpenRouter,
+                    "unapproved/model",
+                    "hello",
+                    None,
+                )
+                .await;
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("authorization denied"));
         });
     }
 
     #[test]
     fn blocks_cloud_without_billing_authorization_before_network() {
         tauri::async_runtime::block_on(async {
-        let transport = InferenceTransport::new().unwrap();
-        let mut authorization = InferenceAuthorization::default();
-        authorization.openrouter_models.insert("approved/model".into());
-        let result = transport.generate(
-            &authorization,
-            InferenceProvider::OpenRouter,
-            "approved/model",
-            "hello",
-            None,
-        ).await;
-        assert!(result.unwrap_err().to_string().contains("authorization denied"));
+            let transport = InferenceTransport::new().unwrap();
+            let mut authorization = InferenceAuthorization::default();
+            authorization
+                .openrouter_models
+                .insert("approved/model".into());
+            let result = transport
+                .generate(
+                    &authorization,
+                    InferenceProvider::OpenRouter,
+                    "approved/model",
+                    "hello",
+                    None,
+                )
+                .await;
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("authorization denied"));
         });
     }
 }
