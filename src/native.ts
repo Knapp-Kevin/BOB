@@ -2,6 +2,16 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AccessibilityPreferences, GeminiCredentialStatus, ItemKind, PersistentWorkState, PlanProjection, ReplanResult } from "./model";
 
 const isTauriRuntime = () => "__TAURI_INTERNALS__" in window;
+export async function loadChatHistory(): Promise<{ author: "user" | "bob"; text: string }[] | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke("load_chat_history");
+}
+
+export async function appendChatMessage(entry: { author: "user" | "bob"; text: string }): Promise<{ author: "user" | "bob"; text: string }[] | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke("append_chat_message", { entry });
+}
+
 const browserGeminiStatus: GeminiCredentialStatus = { configured: false, validation: "notConfigured" };
 
 export async function loadPersistentWorkState(): Promise<PersistentWorkState | null> {

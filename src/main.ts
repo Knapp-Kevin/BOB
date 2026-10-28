@@ -1,7 +1,7 @@
 import "./styles.css";
 import { render } from "./controller";
 import { applyAccessibilityPreferences, applyPlanProjection, hydratePersistentWorkState, state } from "./model";
-import { loadAccessibilityPreferences, loadGeminiCredentialStatus, loadPersistentWorkState, planRemainingWork } from "./native";
+import { loadAccessibilityPreferences, loadChatHistory, loadGeminiCredentialStatus, loadPersistentWorkState, planRemainingWork } from "./native";
 import { installAccessibilityPreferencePersistence } from "./preferences";
 
 async function bootstrap() {
@@ -14,6 +14,13 @@ async function bootstrap() {
     if (preferences) applyAccessibilityPreferences(preferences);
   } catch (error) {
     console.error("Failed to load durable B.O.B. local state", error);
+  }
+
+  try {
+    const history = await loadChatHistory();
+    if (history && history.length) state.chat = history;
+  } catch (error) {
+    console.error("Failed to load canonical B.O.B. conversation", error);
   }
 
   installAccessibilityPreferencePersistence();
