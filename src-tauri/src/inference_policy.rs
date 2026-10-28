@@ -85,9 +85,7 @@ impl InferenceAuthorization {
                 }
                 Ok(ModelBilling::Metered)
             }
-            InferenceProvider::Ollama | InferenceProvider::LmStudio => {
-                Ok(ModelBilling::Local)
-            }
+            InferenceProvider::Ollama | InferenceProvider::LmStudio => Ok(ModelBilling::Local),
         }
     }
 }
@@ -156,7 +154,9 @@ mod tests {
         let mut policy = InferenceAuthorization::default();
         policy.lm_studio_models.insert("model".into());
         for invalid in ["", " model", "model ", "model\\nother", "model other"] {
-            assert!(policy.authorize(InferenceProvider::LmStudio, invalid).is_err());
+            assert!(policy
+                .authorize(InferenceProvider::LmStudio, invalid)
+                .is_err());
         }
         assert_eq!(
             policy.authorize(InferenceProvider::LmStudio, "model"),
