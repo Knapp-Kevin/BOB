@@ -5,10 +5,18 @@ export let openRouterCredentialConfigured = false;
 export let openRouterBusy = false;
 // Session-only Chat opt-in; starts disabled on every launch.
 export let openRouterChatEnabled = false;
-export function setOpenRouterChatEnabled(enabled: boolean) { openRouterChatEnabled = enabled; }
+export function setOpenRouterChatEnabled(enabled: boolean) {
+  openRouterChatEnabled = enabled
+    && openRouterCredentialConfigured
+    && Boolean(openRouterSettings.modelId)
+    && openRouterSettings.cloudEnabled
+    && openRouterSettings.meteredEnabled;
+}
 export let openRouterStatus = "Cloud inference is disabled until explicitly configured.";
 
 export async function refreshOpenRouter() {
+  // Never carry a session-only cloud grant across a settings refresh.
+  openRouterChatEnabled = false;
   try {
     const [settings, credential] = await Promise.all([loadOpenRouterSettings(), loadOpenRouterCredentialStatus()]);
     if (settings) openRouterSettings = settings;
@@ -17,7 +25,9 @@ export async function refreshOpenRouter() {
       ? "Provider configuration is available in the desktop application."
       : "Authorization and credentials are stored locally.";
   } catch {
-    openRouterStatus = "Could not read OpenRouter configuration.";
+    openRouterSettings = { modelId: null, cloudEnabled: false, meteredEnabled: false };
+    openRouterCredentialConfigured = false;
+    openRouterStatus = "Could not read OpenRouter configuration. Cloud Chat is disabled.";
   }
 }
 
