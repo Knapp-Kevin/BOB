@@ -1,7 +1,7 @@
 import { activeItem, applyPlanProjection, escapeHtml, focusItems, hydratePersistentWorkState, showToast, state, type ItemKind, type ReplanResult, type Route, type SetupStep } from "./model";
-import { appendChatMessage, clearChatHistory, applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, resumeDeferredTask, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
+import { generateWithOpenRouter, appendChatMessage, clearChatHistory, applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, resumeDeferredTask, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
 import { renderShell } from "./views";
-import { saveOpenRouterAuthorization, saveOpenRouterKey, removeOpenRouterKey } from "./openrouter_ui";
+import { saveOpenRouterAuthorization, saveOpenRouterKey, removeOpenRouterKey, openRouterChatEnabled, setOpenRouterChatEnabled } from "./openrouter_ui";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
 if (!root) throw new Error("Missing app root");
@@ -87,7 +87,22 @@ function pushConversation(text: string) {
     render();
     let response: string;
     try {
-      response = (await assistWithBob(text)) ?? replyFor(text);
+      if (openRouterChatEnabled) {
+        if (chatByteLength(text) > 4_000) {
+          showToast("OpenRouter accepts up to 4,000 UTF-8 bytes per prompt. Nothing was sent to the provider.");
+          response = "That request is too long for the selected cloud model. Shorten it or turn off OpenRouter in Settings.";
+        } else {
+          try {
+            response = await generateWithOpenRouter(text);
+          } catch (error) {
+            console.error("OpenRouter inference unavailable", error);
+            showToast("OpenRouter could not reply. B.O.B. is using local guidance for this response.");
+            response = (await assistWithBob(text)) ?? replyFor(text);
+          }
+        }
+      } else {
+        response = (await assistWithBob(text)) ?? replyFor(text);
+      }
     } catch (error) {
       console.error("B.O.B. assist failed; using deterministic guidance", error);
       response = replyFor(text);
@@ -356,6 +371,16 @@ function bindEvents() {
       });
   });
 
+  document.querySelector("#openrouter-chat")?.addEventListener("change", (event) => {
+    const enabled = (event.target as HTMLInputElement).checked;
+    if (enabled && !window.confirm("Send your Chat prompts to your approved OpenRouter model? Usage may incur separate charges. This only applies to this app session.")) {
+      render();
+      return;
+    }
+    setOpenRouterChatEnabled(enabled);
+    showToast(enabled ? "OpenRouter Chat enabled for this session." : "Local B.O.B. Chat restored.");
+    render();
+  });
   document.querySelector("#openrouter-config")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const modelId = document.querySelector<HTMLInputElement>("#openrouter-model")?.value.trim() || null;
