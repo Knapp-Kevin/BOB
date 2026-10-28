@@ -2,6 +2,21 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AccessibilityPreferences, GeminiCredentialStatus, ItemKind, PersistentWorkState, PlanProjection, ReplanResult } from "./model";
 
 const isTauriRuntime = () => "__TAURI_INTERNALS__" in window;
+export async function loadChatHistory(): Promise<{ author: "user" | "bob"; text: string }[] | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke("load_chat_history");
+}
+
+export async function clearChatHistory(): Promise<void> {
+  if (!isTauriRuntime()) return;
+  await invoke("clear_chat_history");
+}
+
+export async function appendChatMessage(entry: { author: "user" | "bob"; text: string }): Promise<{ author: "user" | "bob"; text: string }[] | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke("append_chat_message", { entry });
+}
+
 const browserGeminiStatus: GeminiCredentialStatus = { configured: false, validation: "notConfigured" };
 
 export async function loadPersistentWorkState(): Promise<PersistentWorkState | null> {
@@ -47,6 +62,11 @@ export async function startCurrentWork(): Promise<ReplanResult | null> {
 export async function deferCurrentWork(): Promise<ReplanResult | null> {
   if (!isTauriRuntime()) return null;
   return invoke<ReplanResult>("defer_current_work");
+}
+
+export async function resumeDeferredTask(itemId: string): Promise<ReplanResult | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<ReplanResult>("resume_deferred_task", { itemId });
 }
 
 export async function toggleTaskCompleted(itemId: string): Promise<ReplanResult | null> {

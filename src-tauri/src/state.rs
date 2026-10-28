@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fs, path::Path, sync::Mutex, time::Duration};
 use tauri::State;
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 const DATABASE_NAME: &str = "bob.sqlite3";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,6 +40,13 @@ pub struct WorkState {
 pub struct AccessibilityPreferences {
     pub larger_text: bool,
     pub reduced_motion: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatEntry {
+    pub author: String,
+    pub text: String,
 }
 
 pub struct Store {
@@ -154,6 +161,56 @@ impl Store {
         Ok(())
     }
 
+    pub fn load_chat(&self) -> Result<Vec<ChatEntry>> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let mut statement =
+            connection.prepare("SELECT author, text FROM chat_entries ORDER BY id ASC")?;
+        let entries = statement
+            .query_map([], |row| {
+                Ok(ChatEntry {
+                    author: row.get(0)?,
+                    text: row.get(1)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(entries)
+    }
+
+    pub fn append_chat(&self, entry: ChatEntry) -> Result<Vec<ChatEntry>> {
+        if !matches!(entry.author.as_str(), "user" | "bob")
+            || entry.text.trim().is_empty()
+            || entry.text.len() > 8_000
+        {
+            bail!("invalid chat entry");
+        }
+        let mut connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute(
+            "INSERT INTO chat_entries (author, text) VALUES (?1, ?2)",
+            params![entry.author, entry.text],
+        )?;
+        // Retain the most recent 200 turns to bound storage and on-screen context.
+        transaction.execute("DELETE FROM chat_entries WHERE id NOT IN (SELECT id FROM chat_entries ORDER BY id DESC LIMIT 200)", [])?;
+        transaction.commit()?;
+        drop(connection);
+        self.load_chat()
+    }
+
+    pub fn clear_chat(&self) -> Result<()> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        connection.execute("DELETE FROM chat_entries", [])?;
+        Ok(())
+    }
+
     pub fn load_accessibility_preferences(&self) -> Result<AccessibilityPreferences> {
         let connection = self
             .connection
@@ -239,6 +296,24 @@ impl Store {
 
         Ok(())
     }
+}
+
+#[tauri::command]
+pub fn load_chat_history(store: State<'_, Store>) -> std::result::Result<Vec<ChatEntry>, String> {
+    store.load_chat().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn append_chat_message(
+    store: State<'_, Store>,
+    entry: ChatEntry,
+) -> std::result::Result<Vec<ChatEntry>, String> {
+    store.append_chat(entry).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn clear_chat_history(store: State<'_, Store>) -> std::result::Result<(), String> {
+    store.clear_chat().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -490,6 +565,16 @@ fn run_migrations(
                      PRAGMA user_version = 3;",
                 )
                 .context("apply schema migration 3")?,
+            3 => transaction
+                .execute_batch(
+                    "CREATE TABLE chat_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    author TEXT NOT NULL CHECK(author IN ('user', 'bob')),
+                    text TEXT NOT NULL CHECK(length(text) > 0)
+                );
+                PRAGMA user_version = 4;",
+                )
+                .context("apply schema migration 4")?,
             other => bail!("no migration path exists from schema version {other}"),
         }
 
@@ -610,6 +695,124 @@ mod tests {
         store.save(&expected)?;
 
         assert_eq!(store.load()?, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn chat_survives_store_reopen_and_rejects_invalid_entries() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        {
+            let store = Store::open(directory.path())?;
+            store.append_chat(ChatEntry {
+                author: "user".into(),
+                text: "Return to this tomorrow".into(),
+            })?;
+            store.append_chat(ChatEntry {
+                author: "bob".into(),
+                text: "I'll keep the context.".into(),
+            })?;
+            assert!(store
+                .append_chat(ChatEntry {
+                    author: "system".into(),
+                    text: "bad".into()
+                })
+                .is_err());
+        }
+        let reopened = Store::open(directory.path())?;
+        let history = reopened.load_chat()?;
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].text, "Return to this tomorrow");
+        assert_eq!(history[1].author, "bob");
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_chat_over_byte_limit_without_partial_write() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        store.append_chat(ChatEntry {
+            author: "user".into(),
+            text: "valid".into(),
+        })?;
+        assert!(store
+            .append_chat(ChatEntry {
+                author: "user".into(),
+                text: "🧠".repeat(2_001),
+            })
+            .is_err());
+        assert_eq!(store.load_chat()?.len(), 1);
+        assert_eq!(store.load_chat()?[0].text, "valid");
+        Ok(())
+    }
+
+    #[test]
+    fn clearing_chat_preserves_canonical_work_state() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        store.save(&sample_state())?;
+        store.append_chat(ChatEntry {
+            author: "user".into(),
+            text: "Private context".into(),
+        })?;
+        store.clear_chat()?;
+        assert!(store.load_chat()?.is_empty());
+        assert_eq!(store.load()?, sample_state());
+        drop(store);
+        assert!(Store::open(directory.path())?.load_chat()?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn chat_history_retains_latest_two_hundred_messages() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+
+        for number in 0..205 {
+            store.append_chat(ChatEntry {
+                author: "user".into(),
+                text: format!("Message {number}"),
+            })?;
+        }
+
+        let history = store.load_chat()?;
+        assert_eq!(history.len(), 200);
+        assert_eq!(history[0].text, "Message 5");
+        assert_eq!(history[199].text, "Message 204");
+        Ok(())
+    }
+
+    #[test]
+    fn v3_to_v4_migration_preserves_existing_work_and_preferences() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        {
+            let store = Store::open(directory.path())?;
+            store.save(&sample_state())?;
+            store.save_accessibility_preferences(AccessibilityPreferences {
+                larger_text: true,
+                reduced_motion: false,
+            })?;
+        }
+
+        let db_path = directory.path().join(DATABASE_NAME);
+        let legacy = Connection::open(&db_path)?;
+        legacy.execute_batch("DROP TABLE chat_entries; PRAGMA user_version = 3;")?;
+        drop(legacy);
+
+        let upgraded = Store::open(directory.path())?;
+        assert_eq!(upgraded.load()?, sample_state());
+        assert_eq!(
+            upgraded.load_accessibility_preferences()?,
+            AccessibilityPreferences {
+                larger_text: true,
+                reduced_motion: false,
+            }
+        );
+        assert!(upgraded.load_chat()?.is_empty());
+        assert!(directory
+            .path()
+            .join("recovery")
+            .join("bob-pre-migration-1.sqlite3")
+            .exists());
         Ok(())
     }
 

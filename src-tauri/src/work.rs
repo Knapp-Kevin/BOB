@@ -190,6 +190,31 @@ pub fn select_next_task(
     persist_normalized(&store, state).map_err(|error| error.to_string())
 }
 
+// An explicit return from deferral preserves the distinction between paused and completed work.
+fn restore_deferred(state: &mut WorkState, item_id: &str) -> Result<()> {
+    let item = state
+        .items
+        .iter_mut()
+        .find(|item| item.id == item_id)
+        .ok_or_else(|| anyhow::anyhow!("task does not exist in canonical state"))?;
+    if item.kind != "task" || item.status != "deferred" {
+        bail!("only deferred tasks can be resumed");
+    }
+    item.status = "planned".into();
+    state.active_id = Some(item_id.into());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn resume_deferred_task(
+    store: State<'_, Store>,
+    item_id: String,
+) -> std::result::Result<ReplanResult, String> {
+    let mut state = store.load().map_err(|error| error.to_string())?;
+    restore_deferred(&mut state, &item_id).map_err(|error| error.to_string())?;
+    persist_normalized(&store, state).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn save_current_handoff(store: State<'_, Store>) -> std::result::Result<ReplanResult, String> {
     let mut state = store.load().map_err(|error| error.to_string())?;
@@ -317,6 +342,44 @@ mod tests {
         assert_eq!(target.status, "inbox");
         assert_eq!(persisted.active_id, None);
         Ok(())
+    }
+
+    #[test]
+    fn returning_from_deferral_restores_explicit_next_action() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        let mut work = WorkState {
+            active_id: None,
+            items: vec![
+                item("paused", "task", "deferred"),
+                item("other", "task", "planned"),
+            ],
+            handoff: None,
+        };
+        restore_deferred(&mut work, "paused")?;
+        let result = persist_normalized(&store, work)?;
+        assert_eq!(result.work_state.active_id.as_deref(), Some("paused"));
+        assert_eq!(result.plan.next_id.as_deref(), Some("paused"));
+        assert_eq!(result.work_state.items[0].status, "planned");
+        assert_eq!(result.work_state.items[1].status, "planned");
+        Ok(())
+    }
+
+    #[test]
+    fn returning_from_deferral_rejects_non_deferred_without_mutation() {
+        let mut work = WorkState {
+            active_id: None,
+            items: vec![
+                item("done", "task", "done"),
+                item("note", "note", "deferred"),
+            ],
+            handoff: None,
+        };
+        let before = work.clone();
+        assert!(restore_deferred(&mut work, "done").is_err());
+        assert!(restore_deferred(&mut work, "note").is_err());
+        assert!(restore_deferred(&mut work, "missing").is_err());
+        assert_eq!(work, before);
     }
 
     #[test]

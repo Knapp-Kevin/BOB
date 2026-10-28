@@ -1,5 +1,5 @@
 import { activeItem, applyPlanProjection, escapeHtml, focusItems, hydratePersistentWorkState, showToast, state, type ItemKind, type ReplanResult, type Route, type SetupStep } from "./model";
-import { applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
+import { appendChatMessage, clearChatHistory, applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, resumeDeferredTask, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
 import { renderShell } from "./views";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
@@ -61,19 +61,47 @@ async function runWorkMutation(
   render();
 }
 
-function pushConversation(text: string) {
-  state.chat.push({ author: "user", text });
-  render();
+let chatQueue = Promise.resolve();
+const MAX_CHAT_BYTES = 8_000;
+const chatByteLength = (value: string) => new TextEncoder().encode(value).length;
 
-  void assistWithBob(text)
-    .then((response) => {
-      state.chat.push({ author: "bob", text: response ?? replyFor(text) });
-    })
-    .catch((error) => {
-      console.error("Native B.O.B. assist failed; using deterministic browser fallback", error);
-      state.chat.push({ author: "bob", text: replyFor(text) });
-    })
-    .finally(render);
+function pushConversation(text: string) {
+  if (!text.trim() || chatByteLength(text) > MAX_CHAT_BYTES) {
+    showToast("Message is too long. Keep it under 8,000 UTF-8 bytes.");
+    render();
+    return;
+  }
+  // Serialize conversations so responses and durable history remain ordered.
+  chatQueue = chatQueue.then(async () => {
+    try {
+      const saved = await appendChatMessage({ author: "user", text });
+      if (saved) state.chat = saved;
+      else state.chat.push({ author: "user", text });
+    } catch (error) {
+      console.error("Could not save B.O.B. message", error);
+      showToast("Message could not be saved. Conversation was not sent.");
+      render();
+      return;
+    }
+    render();
+    let response: string;
+    try {
+      response = (await assistWithBob(text)) ?? replyFor(text);
+    } catch (error) {
+      console.error("B.O.B. assist failed; using deterministic guidance", error);
+      response = replyFor(text);
+    }
+    try {
+      const saved = await appendChatMessage({ author: "bob", text: response });
+      if (saved) state.chat = saved;
+      else state.chat.push({ author: "bob", text: response });
+    } catch (error) {
+      console.error("Failed to save B.O.B. response", error);
+      state.chat.push({ author: "bob", text: response });
+      showToast("B.O.B. replied, but the reply could not be saved.");
+    }
+    render();
+  }).catch((error) => console.error("B.O.B. conversation queue failed", error));
 }
 
 function downloadPortableExport(contents: string) {
@@ -156,6 +184,16 @@ function bindEvents() {
       .finally(render);
   });
 
+  document.querySelectorAll<HTMLElement>("[data-resume-deferred]").forEach((element) => element.addEventListener("click", () => {
+    const item = state.items.find((candidate) => candidate.id === element.dataset.resumeDeferred);
+    if (!item || item.kind !== "task" || item.status !== "deferred") return;
+    void runWorkMutation(
+      () => resumeDeferredTask(item.id),
+      () => { item.status = "planned"; state.activeId = item.id; },
+      "Returned to your plan. The task is ready when you are."
+    ).then(() => { state.route = "today"; render(); });
+  }));
+
   document.querySelectorAll<HTMLElement>("[data-complete]").forEach((element) => element.addEventListener("click", () => {
     const item = state.items.find((candidate) => candidate.id === element.dataset.complete);
     if (!item || item.kind !== "task") return;
@@ -214,6 +252,21 @@ function bindEvents() {
   document.querySelectorAll<HTMLElement>("[data-prompt]").forEach((element) => element.addEventListener("click", () => {
     pushConversation(element.dataset.prompt!);
   }));
+
+  document.querySelector("#clear-chat")?.addEventListener("click", () => {
+    if (!window.confirm("Clear the saved B.O.B. conversation? This cannot be undone. Your tasks and handoffs will remain.")) return;
+    chatQueue = chatQueue.then(async () => {
+      try {
+        await clearChatHistory();
+        state.chat = [];
+        showToast("Conversation cleared. Tasks and handoffs were kept.");
+      } catch (error) {
+        console.error("B.O.B. could not clear saved conversation", error);
+        showToast("Conversation could not be cleared. Your saved history was preserved.");
+      }
+      render();
+    });
+  });
 
   document.querySelector("#chat-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
