@@ -37,6 +37,7 @@ pub fn run() {
             work::classify_inbox_item,
             work::start_current_work,
             work::defer_current_work,
+            work::resume_deferred_task,
             work::toggle_task_completed,
             work::select_next_task,
             work::save_current_handoff,
