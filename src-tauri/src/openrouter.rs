@@ -9,7 +9,7 @@ use anyhow::{bail, Result};
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::State;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +40,7 @@ impl OpenRouterCredentials {
     }
 
     pub fn configure(&self, mut api_key: String) -> Result<OpenRouterCredentialStatus> {
-        let normalized = api_key.trim().to_owned();
+        let normalized = Zeroizing::new(api_key.trim().to_owned());
         api_key.zeroize();
         if normalized.len() < 20
             || normalized.len() > 4096
@@ -48,11 +48,8 @@ impl OpenRouterCredentials {
         {
             bail!("invalid OpenRouter credential format");
         }
-        // Only replace an existing credential after the new input has passed validation.
-        let result = self.secrets.write(SecretName::OpenRouterApiKey, &normalized);
-        let mut value = normalized;
-        value.zeroize();
-        result?;
+        // Zeroize temporary credential bytes even on validation/write failure.
+        self.secrets.write(SecretName::OpenRouterApiKey, &normalized)?;
         self.status()
     }
 
@@ -139,7 +136,6 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use std::sync::Mutex;
-    use zeroize::Zeroizing;
 
     #[derive(Default)]
     struct FakeSecretStore(Mutex<Option<String>>);
