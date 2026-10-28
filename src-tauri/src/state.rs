@@ -162,7 +162,10 @@ impl Store {
     }
 
     pub fn openrouter_settings(&self) -> Result<(Option<String>, bool, bool)> {
-        let connection = self.connection.lock().map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
         connection.query_row(
             "SELECT model_id, cloud_enabled, metered_enabled FROM openrouter_settings WHERE singleton = 1",
             [],
@@ -170,12 +173,15 @@ impl Store {
         ).context("read OpenRouter authorization")
     }
 
-    pub fn set_openrouter_settings(&self, model: Option<&str>, cloud: bool, metered: bool) -> Result<()> {
+    pub fn set_openrouter_settings(
+        &self,
+        model: Option<&str>,
+        cloud: bool,
+        metered: bool,
+    ) -> Result<()> {
         if let Some(model) = model {
-            if model.is_empty() || model.len() > 256 || model.trim() != model
-                || model.chars().any(|c| c.is_whitespace() || c.is_control()) {
-                bail!("invalid OpenRouter model identifier");
-            }
+            crate::inference_policy::validate_openrouter_model_id(model)
+                .map_err(|reason| anyhow!("invalid OpenRouter model identifier: {reason:?}"))?;
         }
         let connection = self
             .connection
@@ -605,8 +611,9 @@ fn run_migrations(
                 PRAGMA user_version = 4;",
                 )
                 .context("apply schema migration 4")?,
-            4 => transaction.execute_batch(
-                "CREATE TABLE openrouter_settings (
+            4 => transaction
+                .execute_batch(
+                    "CREATE TABLE openrouter_settings (
                     singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
                     model_id TEXT,
                     cloud_enabled INTEGER NOT NULL DEFAULT 0 CHECK(cloud_enabled IN (0, 1)),
@@ -615,7 +622,8 @@ fn run_migrations(
                 INSERT INTO openrouter_settings(singleton, model_id, cloud_enabled, metered_enabled)
                 VALUES (1, NULL, 0, 0);
                 PRAGMA user_version = 5;",
-            ).context("apply schema migration 5")?,
+                )
+                .context("apply schema migration 5")?,
             other => bail!("no migration path exists from schema version {other}"),
         }
 
@@ -806,7 +814,9 @@ mod tests {
         let directory = tempfile::tempdir()?;
         let store = Store::open(directory.path())?;
         assert_eq!(store.openrouter_settings()?, (None, false, false));
-        assert!(store.set_openrouter_settings(Some("bad model"), true, true).is_err());
+        assert!(store
+            .set_openrouter_settings(Some("bad model"), true, true)
+            .is_err());
         assert_eq!(store.openrouter_settings()?, (None, false, false));
         store.set_openrouter_settings(Some("vendor/approved-model"), true, false)?;
         drop(store);
@@ -857,6 +867,55 @@ mod tests {
     }
 
     #[test]
+    fn v4_to_v5_migration_preserves_user_data_and_denies_openrouter() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let preferences = AccessibilityPreferences {
+            larger_text: true,
+            reduced_motion: true,
+        };
+        {
+            let store = Store::open(directory.path())?;
+            store.save(&sample_state())?;
+            store.save_accessibility_preferences(preferences)?;
+            store.append_chat(ChatEntry {
+                author: "user".into(),
+                text: "Keep this conversation".into(),
+            })?;
+        }
+
+        let db_path = directory.path().join(DATABASE_NAME);
+        let legacy = Connection::open(&db_path)?;
+        legacy.execute_batch("DROP TABLE openrouter_settings; PRAGMA user_version = 4;")?;
+        drop(legacy);
+
+        let upgraded = Store::open(directory.path())?;
+        assert_eq!(user_version(&upgraded.connection.lock().unwrap())?, 5);
+        assert_eq!(upgraded.load()?, sample_state());
+        assert_eq!(upgraded.load_accessibility_preferences()?, preferences);
+        let chat = upgraded.load_chat()?;
+        assert_eq!(chat.len(), 1);
+        assert_eq!(chat[0].text, "Keep this conversation");
+        assert_eq!(upgraded.openrouter_settings()?, (None, false, false));
+        assert!(directory
+            .path()
+            .join("recovery")
+            .join("bob-pre-migration-1.sqlite3")
+            .exists());
+        Ok(())
+    }
+
+    #[test]
+    fn openrouter_router_models_cannot_be_approved() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        for id in ["openrouter/auto", "no-vendor", "a/b/c"] {
+            assert!(store.set_openrouter_settings(Some(id), true, true).is_err());
+        }
+        assert_eq!(store.openrouter_settings()?, (None, false, false));
+        Ok(())
+    }
+
+    #[test]
     fn v3_to_v4_migration_preserves_existing_work_and_preferences() -> Result<()> {
         let directory = tempfile::tempdir()?;
         {
@@ -870,7 +929,9 @@ mod tests {
 
         let db_path = directory.path().join(DATABASE_NAME);
         let legacy = Connection::open(&db_path)?;
-        legacy.execute_batch("DROP TABLE chat_entries; PRAGMA user_version = 3;")?;
+        legacy.execute_batch(
+            "DROP TABLE chat_entries; DROP TABLE openrouter_settings; PRAGMA user_version = 3;",
+        )?;
         drop(legacy);
 
         let upgraded = Store::open(directory.path())?;
