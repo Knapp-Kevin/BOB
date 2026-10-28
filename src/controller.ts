@@ -1,5 +1,5 @@
 import { activeItem, applyPlanProjection, escapeHtml, focusItems, hydratePersistentWorkState, showToast, state, type ItemKind, type ReplanResult, type Route, type SetupStep } from "./model";
-import { applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
+import { applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, resumeDeferredTask, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
 import { renderShell } from "./views";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
@@ -155,6 +155,16 @@ function bindEvents() {
       })
       .finally(render);
   });
+
+  document.querySelectorAll<HTMLElement>("[data-resume-deferred]").forEach((element) => element.addEventListener("click", () => {
+    const item = state.items.find((candidate) => candidate.id === element.dataset.resumeDeferred);
+    if (!item || item.kind !== "task" || item.status !== "deferred") return;
+    void runWorkMutation(
+      () => resumeDeferredTask(item.id),
+      () => { item.status = "planned"; state.activeId = item.id; },
+      "Returned to your plan. The task is ready when you are."
+    ).then(() => { state.route = "today"; render(); });
+  }));
 
   document.querySelectorAll<HTMLElement>("[data-complete]").forEach((element) => element.addEventListener("click", () => {
     const item = state.items.find((candidate) => candidate.id === element.dataset.complete);

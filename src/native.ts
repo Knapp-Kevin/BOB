@@ -49,6 +49,11 @@ export async function deferCurrentWork(): Promise<ReplanResult | null> {
   return invoke<ReplanResult>("defer_current_work");
 }
 
+export async function resumeDeferredTask(itemId: string): Promise<ReplanResult | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<ReplanResult>("resume_deferred_task", { itemId });
+}
+
 export async function toggleTaskCompleted(itemId: string): Promise<ReplanResult | null> {
   if (!isTauriRuntime()) return null;
   return invoke<ReplanResult>("toggle_task_completed", { itemId });
