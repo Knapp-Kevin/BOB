@@ -177,11 +177,17 @@ impl Store {
                 bail!("invalid OpenRouter model identifier");
             }
         }
-        let connection = self.connection.lock().map_err(|_| anyhow!("canonical state lock is poisoned"))?;
-        connection.execute(
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let affected = connection.execute(
             "UPDATE openrouter_settings SET model_id = ?1, cloud_enabled = ?2, metered_enabled = ?3 WHERE singleton = 1",
             params![model, i64::from(cloud), i64::from(metered)],
         )?;
+        if affected != 1 {
+            bail!("OpenRouter settings record missing; refusing silent authorization update");
+        }
         Ok(())
     }
 
