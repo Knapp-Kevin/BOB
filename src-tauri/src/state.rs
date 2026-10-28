@@ -184,6 +184,12 @@ impl Store {
         self.load_chat()
     }
 
+    pub fn clear_chat(&self) -> Result<()> {
+        let connection = self.connection.lock().map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        connection.execute("DELETE FROM chat_entries", [])?;
+        Ok(())
+    }
+
     pub fn load_accessibility_preferences(&self) -> Result<AccessibilityPreferences> {
         let connection = self
             .connection
@@ -279,6 +285,11 @@ pub fn load_chat_history(store: State<'_, Store>) -> std::result::Result<Vec<Cha
 #[tauri::command]
 pub fn append_chat_message(store: State<'_, Store>, entry: ChatEntry) -> std::result::Result<Vec<ChatEntry>, String> {
     store.append_chat(entry).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn clear_chat_history(store: State<'_, Store>) -> std::result::Result<(), String> {
+    store.clear_chat().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -675,6 +686,20 @@ mod tests {
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].text, "Return to this tomorrow");
         assert_eq!(history[1].author, "bob");
+        Ok(())
+    }
+
+    #[test]
+    fn clearing_chat_preserves_canonical_work_state() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        store.save(&sample_state())?;
+        store.append_chat(ChatEntry { author: "user".into(), text: "Private context".into() })?;
+        store.clear_chat()?;
+        assert!(store.load_chat()?.is_empty());
+        assert_eq!(store.load()?, sample_state());
+        drop(store);
+        assert!(Store::open(directory.path())?.load_chat()?.is_empty());
         Ok(())
     }
 
