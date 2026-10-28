@@ -27,7 +27,8 @@ export async function saveOpenRouterKey(key: string) {
   try {
     const status = await configureOpenRouterCredential(key);
     openRouterCredentialConfigured = status.configured;
-    openRouterStatus = "Credential saved to protected operating-system storage.";
+    openRouterChatEnabled = false;
+    openRouterStatus = "Credential saved to protected operating-system storage. Re-enable cloud Chat if desired.";
   } catch {
     openRouterStatus = "Credential was not saved. Existing credentials were preserved.";
   } finally {
