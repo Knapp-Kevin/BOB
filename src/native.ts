@@ -17,6 +17,43 @@ export async function appendChatMessage(entry: { author: "user" | "bob"; text: s
   return invoke("append_chat_message", { entry });
 }
 
+export type OpenRouterSettings = { modelId: string | null; cloudEnabled: boolean; meteredEnabled: boolean };
+export type OpenRouterCredentialStatus = { configured: boolean };
+
+export async function loadOpenRouterSettings(): Promise<OpenRouterSettings | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<OpenRouterSettings>("openrouter_settings");
+}
+
+export async function configureOpenRouterModel(settings: OpenRouterSettings): Promise<OpenRouterSettings | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<OpenRouterSettings>("configure_openrouter_model", {
+    modelId: settings.modelId,
+    cloudEnabled: settings.cloudEnabled,
+    meteredEnabled: settings.meteredEnabled
+  });
+}
+
+export async function loadOpenRouterCredentialStatus(): Promise<OpenRouterCredentialStatus> {
+  if (!isTauriRuntime()) return { configured: false };
+  return invoke<OpenRouterCredentialStatus>("openrouter_credential_status");
+}
+
+export async function configureOpenRouterCredential(apiKey: string): Promise<OpenRouterCredentialStatus> {
+  if (!isTauriRuntime()) throw new Error("OpenRouter key storage requires the desktop application");
+  return invoke<OpenRouterCredentialStatus>("configure_openrouter_credential", { apiKey });
+}
+
+export async function removeOpenRouterCredential(): Promise<OpenRouterCredentialStatus> {
+  if (!isTauriRuntime()) throw new Error("OpenRouter credential removal requires the desktop application");
+  return invoke<OpenRouterCredentialStatus>("remove_openrouter_credential");
+}
+
+export async function generateWithOpenRouter(prompt: string): Promise<string> {
+  if (!isTauriRuntime()) throw new Error("OpenRouter inference requires the desktop application");
+  return invoke<string>("generate_openrouter", { prompt });
+}
+
 const browserGeminiStatus: GeminiCredentialStatus = { configured: false, validation: "notConfigured" };
 
 export async function loadPersistentWorkState(): Promise<PersistentWorkState | null> {
