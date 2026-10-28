@@ -12,6 +12,8 @@ const LM_STUDIO_ENDPOINT: &str = "http://127.0.0.1:1234/v1/chat/completions";
 const TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_PROMPT_BYTES: usize = 4_000;
 const MAX_RESPONSE_BYTES: usize = 64_000;
+// Must match the canonical chat-entry persistence limit.
+const MAX_GENERATION_BYTES: usize = 8_000;
 
 #[derive(Serialize)]
 struct Request<'a> {
@@ -117,17 +119,33 @@ impl InferenceTransport {
         let output = parsed.choices.into_iter().next()
             .and_then(|choice| choice.message.content)
             .unwrap_or_default();
-        if output.trim().is_empty() {
-            bail!("inference response is empty");
-        }
+        validate_generated_text(&output)?;
         Ok(output)
     }
+}
+
+fn validate_generated_text(output: &str) -> Result<()> {
+    if output.trim().is_empty() {
+        bail!("inference response is empty");
+    }
+    if output.len() > MAX_GENERATION_BYTES {
+        bail!("inference response exceeds chat persistence limit");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::inference_policy::InferenceAuthorization;
+
+    #[test]
+    fn rejects_generated_text_that_cannot_be_saved() {
+        assert!(validate_generated_text("Useful reply").is_ok());
+        assert!(validate_generated_text("   ").is_err());
+        assert!(validate_generated_text(&"🧠".repeat(2_001)).is_err());
+        assert!(validate_generated_text(&"x".repeat(8_000)).is_ok());
+    }
 
     #[tokio::test]
     async fn denies_unapproved_models_before_network() {
