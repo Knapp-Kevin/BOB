@@ -787,6 +787,21 @@ mod tests {
     }
 
     #[test]
+    fn missing_openrouter_settings_row_rejects_authorization_update() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        {
+            let connection = store.connection.lock().unwrap();
+            connection.execute("DELETE FROM openrouter_settings WHERE singleton = 1", [])?;
+        }
+        assert!(store
+            .set_openrouter_settings(Some("vendor/model"), true, true)
+            .is_err());
+        assert!(store.openrouter_settings().is_err());
+        Ok(())
+    }
+
+    #[test]
     fn openrouter_settings_are_deny_by_default_and_survive_reopen() -> Result<()> {
         let directory = tempfile::tempdir()?;
         let store = Store::open(directory.path())?;
