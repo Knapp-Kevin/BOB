@@ -192,7 +192,10 @@ pub fn select_next_task(
 
 // An explicit return from deferral preserves the distinction between paused and completed work.
 fn restore_deferred(state: &mut WorkState, item_id: &str) -> Result<()> {
-    let item = state.items.iter_mut().find(|item| item.id == item_id)
+    let item = state
+        .items
+        .iter_mut()
+        .find(|item| item.id == item_id)
         .ok_or_else(|| anyhow::anyhow!("task does not exist in canonical state"))?;
     if item.kind != "task" || item.status != "deferred" {
         bail!("only deferred tasks can be resumed");
@@ -347,7 +350,10 @@ mod tests {
         let store = Store::open(directory.path())?;
         let mut work = WorkState {
             active_id: None,
-            items: vec![item("paused", "task", "deferred"), item("other", "task", "planned")],
+            items: vec![
+                item("paused", "task", "deferred"),
+                item("other", "task", "planned"),
+            ],
             handoff: None,
         };
         restore_deferred(&mut work, "paused")?;
@@ -363,7 +369,10 @@ mod tests {
     fn returning_from_deferral_rejects_non_deferred_without_mutation() {
         let mut work = WorkState {
             active_id: None,
-            items: vec![item("done", "task", "done"), item("note", "note", "deferred")],
+            items: vec![
+                item("done", "task", "done"),
+                item("note", "note", "deferred"),
+            ],
             handoff: None,
         };
         let before = work.clone();
