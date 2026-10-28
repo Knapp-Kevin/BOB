@@ -18,6 +18,11 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Registered first: a second launch hands off to the running window and exits
+        // before setup opens the canonical profile (see state::ProfileLock).
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            focus_main_window(app);
+        }))
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let store = state::Store::open(&data_dir)
@@ -68,4 +73,12 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running B.O.B.");
+}
+
+fn focus_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
