@@ -147,8 +147,9 @@ mod tests {
         assert!(validate_generated_text(&"x".repeat(8_000)).is_ok());
     }
 
-    #[tokio::test]
-    async fn denies_unapproved_models_before_network() {
+    #[test]
+    fn denies_unapproved_models_before_network() {
+        tauri::async_runtime::block_on(async {
         let transport = InferenceTransport::new().unwrap();
         let result = transport.generate(
             &InferenceAuthorization::default(),
@@ -158,10 +159,12 @@ mod tests {
             None,
         ).await;
         assert!(result.unwrap_err().to_string().contains("authorization denied"));
+        });
     }
 
-    #[tokio::test]
-    async fn blocks_cloud_without_billing_authorization_before_network() {
+    #[test]
+    fn blocks_cloud_without_billing_authorization_before_network() {
+        tauri::async_runtime::block_on(async {
         let transport = InferenceTransport::new().unwrap();
         let mut authorization = InferenceAuthorization::default();
         authorization.openrouter_models.insert("approved/model".into());
@@ -173,5 +176,6 @@ mod tests {
             None,
         ).await;
         assert!(result.unwrap_err().to_string().contains("authorization denied"));
+        });
     }
 }
