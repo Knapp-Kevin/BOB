@@ -442,6 +442,30 @@ mod tests {
     }
 
     #[test]
+    fn clearing_chat_then_restoring_older_backup_keeps_empty_history() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let canonical = directory.path().join(DATABASE_NAME);
+        create_bob_v3_database(&canonical)?;
+        let store = Store::open(directory.path())?;
+        store.append_chat(ChatEntry {
+            author: "user".into(),
+            text: "Not present in older snapshot".into(),
+        })?;
+
+        let backup_dir = directory.path().join(USER_BACKUP_DIR);
+        fs::create_dir_all(&backup_dir)?;
+        let older = backup_dir.join("bob-backup-older-v3.sqlite3");
+        create_bob_v3_database(&older)?;
+
+        store.clear_chat()?;
+        restore_user_backup(directory.path(), &store, &older)?;
+
+        assert!(store.load_chat()?.is_empty());
+        assert_eq!(store.load()?.items[0].title, "Preserved task");
+        Ok(())
+    }
+
+    #[test]
     fn restore_migrates_valid_older_schema_forward() -> Result<()> {
         let directory = tempfile::tempdir()?;
         let canonical = directory.path().join(DATABASE_NAME);
