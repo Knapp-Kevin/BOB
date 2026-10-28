@@ -61,6 +61,18 @@ See [`docs/PRODUCT.md`](docs/PRODUCT.md), [`docs/ARCHITECTURE.md`](docs/ARCHITEC
 
 The landed normal-mode experience is intentionally calm: one dominant purpose per screen, progressive disclosure for secondary detail, conditional space for empty content, and coherent density without relying on reduced-information mode to rescue a cluttered default.
 
+## See it
+
+Real screens from a local alpha debug build on Windows, using fictional demo data. The Settings screen comes from draft PR #127. Provenance, checksums and alt text are in [`docs/marketing/MANIFEST.md`](docs/marketing/MANIFEST.md).
+
+| Today | Inbox |
+| --- | --- |
+| ![Today showing one next action, a quick-capture bar, a one-item plan and a resume card](docs/marketing/screenshots/01-today.png) | ![Inbox listing three captured items classified as Task, Idea and Task](docs/marketing/screenshots/02-inbox-classified.png) |
+| **Preview before apply** | **Overwhelmed mode** |
+| ![Chat showing a proposed change with Apply this change and Keep things as they are buttons](docs/marketing/screenshots/03-chat-preview-before-apply.png) | ![Today reduced to the next action and quick capture](docs/marketing/screenshots/05-today-overwhelmed-mode.png) |
+
+A 74-second silent walkthrough with captions and a transcript is in [`docs/marketing/video/`](docs/marketing/video/TRANSCRIPT.md).
+
 ## Architecture in one picture
 
 ```mermaid
@@ -261,6 +273,7 @@ Historical implementation is preserved in Git history and `archive/pre-revival-c
 | Understand the product | [`docs/PRODUCT.md`](docs/PRODUCT.md) |
 | Understand the system | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Understand the current user experience | [`docs/DESIGN.md`](docs/DESIGN.md) |
+| See screenshots and the walkthrough | [`docs/marketing/`](docs/marketing/README.md) |
 | Understand validation/release evidence | [`docs/VALIDATION.md`](docs/VALIDATION.md) |
 | See implementation direction | [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) |
 | See roadmap | [`docs/ROADMAP.md`](docs/ROADMAP.md) |

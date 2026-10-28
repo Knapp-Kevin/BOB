@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:08.500
+The Inbox holds three fictional items captured a moment earlier, already sorted into tasks and an idea.
+
+00:00:08.500 --> 00:00:17.500
+A new thought goes straight into quick capture, then gets classified as a reminder.
+
+00:00:17.500 --> 00:00:32.500
+Organize with B.O.B. suggests one change and shows it first. Nothing changes until it is approved.
+
+00:00:32.500 --> 00:00:41.000
+After approval, Today shows one next action, the remaining plan, and where to resume.
+
+00:00:41.000 --> 00:00:44.400
+Do it now marks the next action as in progress.
+
+00:00:44.400 --> 00:00:56.600
+In Chat, Break it down suggests a smaller first step. This guidance runs locally; nothing is sent to a cloud model.
+
+00:00:56.600 --> 00:01:09.100
+Save my place stores a handoff on this computer, so the task can be picked up again after a restart.
+
+00:01:09.100 --> 00:01:14.333
+Settings: optional inference providers are listed separately and are off by default.
