@@ -102,9 +102,15 @@ impl InferenceTransport {
         if !response.status().is_success() {
             bail!("inference provider rejected request: HTTP {}", response.status().as_u16());
         }
-        let bytes = response.bytes().await.context("read inference response")?;
-        if bytes.len() > MAX_RESPONSE_BYTES {
-            bail!("inference response exceeds size limit");
+        // Bound allocation while reading, not only after downloading a potentially
+        // unbounded provider response into memory.
+        let mut response = response;
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.context("read inference response")? {
+            if chunk.len() > MAX_RESPONSE_BYTES.saturating_sub(bytes.len()) {
+                bail!("inference response exceeds size limit");
+            }
+            bytes.extend_from_slice(&chunk);
         }
         let parsed: Response = serde_json::from_slice(&bytes)
             .context("invalid inference response")?;
