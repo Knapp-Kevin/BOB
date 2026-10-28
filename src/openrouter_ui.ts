@@ -3,6 +3,9 @@ import { configureOpenRouterCredential, configureOpenRouterModel, loadOpenRouter
 export let openRouterSettings: OpenRouterSettings = { modelId: null, cloudEnabled: false, meteredEnabled: false };
 export let openRouterCredentialConfigured = false;
 export let openRouterBusy = false;
+// Session-only Chat opt-in; starts disabled on every launch.
+export let openRouterChatEnabled = false;
+export function setOpenRouterChatEnabled(enabled: boolean) { openRouterChatEnabled = enabled; }
 export let openRouterStatus = "Cloud inference is disabled until explicitly configured.";
 
 export async function refreshOpenRouter() {
@@ -38,6 +41,7 @@ export async function removeOpenRouterKey() {
   try {
     await removeOpenRouterCredential();
     openRouterCredentialConfigured = false;
+    openRouterChatEnabled = false;
     openRouterStatus = "Credential removed.";
   } catch {
     openRouterStatus = "Credential removal failed.";
@@ -53,6 +57,7 @@ export async function saveOpenRouterAuthorization(settings: OpenRouterSettings) 
     const result = await configureOpenRouterModel(settings);
     if (!result) throw new Error("desktop required");
     openRouterSettings = result;
+    if (!result.cloudEnabled || !result.meteredEnabled || !result.modelId) openRouterChatEnabled = false;
     openRouterStatus = result.cloudEnabled && result.meteredEnabled
       ? "Cloud and metered inference authorized for the selected model."
       : "OpenRouter spending remains disabled.";
