@@ -29,6 +29,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             state::load_work_state,
+            state::load_chat_history,
+            state::append_chat_message,
             state::load_accessibility_preferences,
             state::set_accessibility_preferences,
             planner::plan_remaining_work,
@@ -37,6 +39,7 @@ pub fn run() {
             work::classify_inbox_item,
             work::start_current_work,
             work::defer_current_work,
+            work::resume_deferred_task,
             work::toggle_task_completed,
             work::select_next_task,
             work::save_current_handoff,
