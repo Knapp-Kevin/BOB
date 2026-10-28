@@ -3,6 +3,7 @@ mod backup;
 mod export;
 mod gemini;
 pub mod inference_policy;
+pub mod inference_transport;
 pub mod ollama;
 mod planner;
 mod proposals;
