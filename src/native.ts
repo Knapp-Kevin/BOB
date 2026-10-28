@@ -17,7 +17,8 @@ export async function appendChatMessage(entry: { author: "user" | "bob"; text: s
   return invoke("append_chat_message", { entry });
 }
 
-export type OpenRouterSettings = { modelId: string | null; cloudEnabled: boolean; meteredEnabled: boolean };
+export type OpenRouterAuthorization = { modelId: string | null; cloudEnabled: boolean; meteredEnabled: boolean };
+export type OpenRouterSettings = OpenRouterAuthorization & { chatSessionEnabled: boolean };
 export type OpenRouterCredentialStatus = { configured: boolean };
 
 export async function loadOpenRouterSettings(): Promise<OpenRouterSettings | null> {
@@ -25,13 +26,18 @@ export async function loadOpenRouterSettings(): Promise<OpenRouterSettings | nul
   return invoke<OpenRouterSettings>("openrouter_settings");
 }
 
-export async function configureOpenRouterModel(settings: OpenRouterSettings): Promise<OpenRouterSettings | null> {
+export async function configureOpenRouterModel(settings: OpenRouterAuthorization): Promise<OpenRouterSettings | null> {
   if (!isTauriRuntime()) return null;
   return invoke<OpenRouterSettings>("configure_openrouter_model", {
     modelId: settings.modelId,
     cloudEnabled: settings.cloudEnabled,
     meteredEnabled: settings.meteredEnabled
   });
+}
+
+export async function setOpenRouterChatSession(enabled: boolean): Promise<OpenRouterSettings> {
+  if (!isTauriRuntime()) throw new Error("OpenRouter Chat requires the desktop application");
+  return invoke<OpenRouterSettings>("set_openrouter_chat_session", { enabled });
 }
 
 export async function loadOpenRouterCredentialStatus(): Promise<OpenRouterCredentialStatus> {

@@ -1,7 +1,7 @@
 import { activeItem, applyPlanProjection, escapeHtml, focusItems, hydratePersistentWorkState, showToast, state, type ItemKind, type ReplanResult, type Route, type SetupStep } from "./model";
 import { generateWithOpenRouter, appendChatMessage, clearChatHistory, applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, resumeDeferredTask, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
 import { renderShell } from "./views";
-import { saveOpenRouterAuthorization, saveOpenRouterKey, removeOpenRouterKey, openRouterChatEnabled, setOpenRouterChatEnabled } from "./openrouter_ui";
+import { saveOpenRouterAuthorization, saveOpenRouterKey, removeOpenRouterKey, openRouterChatEnabled, openRouterFailureMessage, refreshOpenRouter, setOpenRouterChatEnabled } from "./openrouter_ui";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
 if (!root) throw new Error("Missing app root");
@@ -96,7 +96,9 @@ function pushConversation(text: string) {
             response = await generateWithOpenRouter(text);
           } catch (error) {
             console.error("OpenRouter inference unavailable", error);
-            showToast("OpenRouter could not reply. B.O.B. is using local guidance for this response.");
+            showToast(`${openRouterFailureMessage(error)} B.O.B. is using local guidance for this response.`);
+            // Resynchronize with the backend grant, which may have been revoked.
+            await refreshOpenRouter();
             response = (await assistWithBob(text)) ?? replyFor(text);
           }
         }
@@ -377,9 +379,9 @@ function bindEvents() {
       render();
       return;
     }
-    setOpenRouterChatEnabled(enabled);
-    showToast(enabled ? "OpenRouter Chat enabled for this session." : "Local B.O.B. Chat restored.");
-    render();
+    void setOpenRouterChatEnabled(enabled).then((applied) => {
+      if (applied) showToast(openRouterChatEnabled ? "OpenRouter Chat enabled for this session." : "Local B.O.B. Chat restored.");
+    }).finally(render);
   });
   document.querySelector("#openrouter-config")?.addEventListener("submit", (event) => {
     event.preventDefault();

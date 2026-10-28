@@ -65,3 +65,8 @@
   .setup-actions { flex-direction: column; }
   .setup-actions > * { width: 100%; }
 }
+.openrouter label.field { flex-direction: column; align-items: stretch; gap: 8px; }
+.openrouter label.field input { width: 100%; height: 40px; padding: 0 12px; border: 1px solid #d4dfe9; border-radius: 10px; font: inherit; }
+.openrouter label.check { justify-content: flex-start; gap: 12px; }
+.openrouter label.check input { width: 22px; flex: none; }
+.openrouter form + label, .openrouter form { margin-top: 8px; }

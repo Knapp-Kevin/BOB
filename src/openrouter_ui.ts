@@ -1,46 +1,71 @@
-import { configureOpenRouterCredential, configureOpenRouterModel, loadOpenRouterCredentialStatus, loadOpenRouterSettings, removeOpenRouterCredential, type OpenRouterSettings } from "./native";
+import { configureOpenRouterCredential, configureOpenRouterModel, loadOpenRouterCredentialStatus, loadOpenRouterSettings, removeOpenRouterCredential, setOpenRouterChatSession, type OpenRouterAuthorization, type OpenRouterSettings } from "./native";
 
-export let openRouterSettings: OpenRouterSettings = { modelId: null, cloudEnabled: false, meteredEnabled: false };
+const disabledSettings = (): OpenRouterSettings => ({ modelId: null, cloudEnabled: false, meteredEnabled: false, chatSessionEnabled: false });
+
+export let openRouterSettings: OpenRouterSettings = disabledSettings();
 export let openRouterCredentialConfigured = false;
 export let openRouterBusy = false;
-// Session-only Chat opt-in; starts disabled on every launch.
+// Mirrors the Rust-held session grant, which starts empty on every launch.
 export let openRouterChatEnabled = false;
-export function setOpenRouterChatEnabled(enabled: boolean) {
-  openRouterChatEnabled = enabled
-    && openRouterCredentialConfigured
-    && Boolean(openRouterSettings.modelId)
-    && openRouterSettings.cloudEnabled
-    && openRouterSettings.meteredEnabled;
-}
 export let openRouterStatus = "Cloud inference is disabled until explicitly configured.";
 
+function adopt(settings: OpenRouterSettings) {
+  openRouterSettings = settings;
+  openRouterChatEnabled = settings.chatSessionEnabled;
+}
+
+export const openRouterChatAvailable = () => openRouterCredentialConfigured
+  && Boolean(openRouterSettings.modelId)
+  && openRouterSettings.cloudEnabled
+  && openRouterSettings.meteredEnabled;
+
 export async function refreshOpenRouter() {
-  // Never carry a session-only cloud grant across a settings refresh.
-  openRouterChatEnabled = false;
   try {
     const [settings, credential] = await Promise.all([loadOpenRouterSettings(), loadOpenRouterCredentialStatus()]);
-    if (settings) openRouterSettings = settings;
+    if (settings) adopt(settings);
+    else openRouterChatEnabled = false;
     openRouterCredentialConfigured = credential.configured;
     openRouterStatus = settings === null
       ? "Provider configuration is available in the desktop application."
       : "Authorization and credentials are stored locally.";
   } catch {
-    openRouterSettings = { modelId: null, cloudEnabled: false, meteredEnabled: false };
+    openRouterSettings = disabledSettings();
+    openRouterChatEnabled = false;
     openRouterCredentialConfigured = false;
     openRouterStatus = "Could not read OpenRouter configuration. Cloud Chat is disabled.";
+  }
+}
+
+export async function setOpenRouterChatEnabled(enabled: boolean): Promise<boolean> {
+  if (openRouterBusy) return false;
+  openRouterBusy = true;
+  // Fail closed locally first; only the backend's answer can turn it on.
+  if (enabled) openRouterChatEnabled = false;
+  try {
+    adopt(await setOpenRouterChatSession(enabled));
+    return true;
+  } catch {
+    openRouterChatEnabled = false;
+    openRouterStatus = enabled
+      ? "OpenRouter Chat could not be enabled. Check the API key and model authorization."
+      : "OpenRouter Chat could not be confirmed off. Restart B.O.B. to clear the session.";
+    return false;
+  } finally {
+    openRouterBusy = false;
   }
 }
 
 export async function saveOpenRouterKey(key: string) {
   if (openRouterBusy) return;
   openRouterBusy = true;
+  // The backend revokes the session grant before replacing the credential.
+  openRouterChatEnabled = false;
   try {
     const status = await configureOpenRouterCredential(key);
     openRouterCredentialConfigured = status.configured;
-    openRouterChatEnabled = false;
     openRouterStatus = "Credential saved to protected operating-system storage. Re-enable cloud Chat if desired.";
   } catch {
-    openRouterStatus = "Credential was not saved. Existing credentials were preserved.";
+    openRouterStatus = "Credential was not saved. Check the key format and try again.";
   } finally {
     openRouterBusy = false;
   }
@@ -49,10 +74,10 @@ export async function saveOpenRouterKey(key: string) {
 export async function removeOpenRouterKey() {
   if (openRouterBusy) return;
   openRouterBusy = true;
+  openRouterChatEnabled = false;
   try {
     await removeOpenRouterCredential();
     openRouterCredentialConfigured = false;
-    openRouterChatEnabled = false;
     openRouterStatus = "Credential removed.";
   } catch {
     openRouterStatus = "Credential removal failed.";
@@ -61,21 +86,33 @@ export async function removeOpenRouterKey() {
   }
 }
 
-export async function saveOpenRouterAuthorization(settings: OpenRouterSettings) {
+export async function saveOpenRouterAuthorization(settings: OpenRouterAuthorization) {
   if (openRouterBusy) return;
   openRouterBusy = true;
+  // Every model or billing policy change requires a fresh session opt-in.
+  openRouterChatEnabled = false;
   try {
     const result = await configureOpenRouterModel(settings);
     if (!result) throw new Error("desktop required");
-    openRouterSettings = result;
-    // Every model or billing policy change requires a fresh session opt-in.
-    openRouterChatEnabled = false;
+    adopt(result);
     openRouterStatus = result.cloudEnabled && result.meteredEnabled
       ? "Cloud and metered inference authorized for the selected model."
       : "OpenRouter spending remains disabled.";
   } catch {
-    openRouterStatus = "Model authorization was not saved.";
+    openRouterStatus = "Model authorization was not saved. Use a vendor/model ID; OpenRouter routers such as openrouter/auto are not allowed.";
   } finally {
     openRouterBusy = false;
   }
+}
+
+/** Maps a backend failure to user-facing copy. Backend errors never carry credentials. */
+export function openRouterFailureMessage(error: unknown): string {
+  const detail = String(error);
+  if (/HTTP 401|HTTP 403/.test(detail)) return "OpenRouter rejected the saved API key.";
+  if (/HTTP 402/.test(detail)) return "OpenRouter reports insufficient credits.";
+  if (/HTTP 429/.test(detail)) return "OpenRouter is rate limiting requests.";
+  if (/not enabled|model changed|authorization denied|credential not configured|not been authorized/.test(detail)) {
+    return "OpenRouter Chat is no longer authorized. Re-enable it in Settings.";
+  }
+  return "OpenRouter could not reply.";
 }
