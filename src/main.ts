@@ -18,7 +18,7 @@ async function bootstrap() {
 
   try {
     const history = await loadChatHistory();
-    if (history && history.length) state.chat = history;
+    if (history !== null) state.chat = history;
   } catch (error) {
     console.error("Failed to load canonical B.O.B. conversation", error);
   }
