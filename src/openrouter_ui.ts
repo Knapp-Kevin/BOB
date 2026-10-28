@@ -57,7 +57,8 @@ export async function saveOpenRouterAuthorization(settings: OpenRouterSettings) 
     const result = await configureOpenRouterModel(settings);
     if (!result) throw new Error("desktop required");
     openRouterSettings = result;
-    if (!result.cloudEnabled || !result.meteredEnabled || !result.modelId) openRouterChatEnabled = false;
+    // Every model or billing policy change requires a fresh session opt-in.
+    openRouterChatEnabled = false;
     openRouterStatus = result.cloudEnabled && result.meteredEnabled
       ? "Cloud and metered inference authorized for the selected model."
       : "OpenRouter spending remains disabled.";
