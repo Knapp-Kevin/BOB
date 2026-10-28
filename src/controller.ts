@@ -1,6 +1,7 @@
 import { activeItem, applyPlanProjection, escapeHtml, focusItems, hydratePersistentWorkState, showToast, state, type ItemKind, type ReplanResult, type Route, type SetupStep } from "./model";
 import { appendChatMessage, clearChatHistory, applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, resumeDeferredTask, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
 import { renderShell } from "./views";
+import { saveOpenRouterAuthorization, saveOpenRouterKey, removeOpenRouterKey } from "./openrouter_ui";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
 if (!root) throw new Error("Missing app root");
@@ -353,6 +354,26 @@ function bindEvents() {
         console.error("Failed to create B.O.B. portable export", error);
         showToast("B.O.B. could not create the portable export. Canonical state was not changed.");
       });
+  });
+
+  document.querySelector("#openrouter-config")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const modelId = document.querySelector<HTMLInputElement>("#openrouter-model")?.value.trim() || null;
+    const cloudEnabled = Boolean(document.querySelector<HTMLInputElement>("#openrouter-cloud")?.checked);
+    const meteredEnabled = Boolean(document.querySelector<HTMLInputElement>("#openrouter-metered")?.checked);
+    if (cloudEnabled && meteredEnabled && !window.confirm("Authorize sending Chat prompts to OpenRouter using the selected model? This can incur separately billed API usage.")) return;
+    void saveOpenRouterAuthorization({ modelId, cloudEnabled, meteredEnabled }).finally(render);
+  });
+  document.querySelector("#openrouter-credential")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const input = document.querySelector<HTMLInputElement>("#openrouter-key");
+    const key = input?.value ?? "";
+    if (input) input.value = "";
+    void saveOpenRouterKey(key).finally(render);
+  });
+  document.querySelector("#openrouter-remove-key")?.addEventListener("click", () => {
+    if (!window.confirm("Remove the saved OpenRouter API key?")) return;
+    void removeOpenRouterKey().finally(render);
   });
 
   document.querySelector("#setup")?.addEventListener("click", () => openSetup());
