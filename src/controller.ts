@@ -1,5 +1,5 @@
 import { activeItem, applyPlanProjection, escapeHtml, focusItems, hydratePersistentWorkState, showToast, state, type ItemKind, type ReplanResult, type Route, type SetupStep } from "./model";
-import { appendChatMessage, applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, resumeDeferredTask, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
+import { appendChatMessage, clearChatHistory, applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, resumeDeferredTask, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
 import { renderShell } from "./views";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
@@ -244,6 +244,21 @@ function bindEvents() {
   document.querySelectorAll<HTMLElement>("[data-prompt]").forEach((element) => element.addEventListener("click", () => {
     pushConversation(element.dataset.prompt!);
   }));
+
+  document.querySelector("#clear-chat")?.addEventListener("click", () => {
+    if (!window.confirm("Clear the saved B.O.B. conversation? This cannot be undone. Your tasks and handoffs will remain.")) return;
+    chatQueue = chatQueue.then(async () => {
+      try {
+        await clearChatHistory();
+        state.chat = [];
+        showToast("Conversation cleared. Tasks and handoffs were kept.");
+      } catch (error) {
+        console.error("B.O.B. could not clear saved conversation", error);
+        showToast("Conversation could not be cleared. Your saved history was preserved.");
+      }
+      render();
+    });
+  });
 
   document.querySelector("#chat-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
