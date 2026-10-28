@@ -70,3 +70,11 @@
 .openrouter label.check { justify-content: flex-start; gap: 12px; }
 .openrouter label.check input { width: 22px; flex: none; }
 .openrouter form + label, .openrouter form { margin-top: 8px; }
+.openrouter { grid-column: 1/-1; }
+.openrouter-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; }
+.openrouter-columns .primary + .plain, .openrouter #openrouter-remove-key { margin-top: 10px; }
+@media (max-width: 1100px) { .openrouter-columns { grid-template-columns: 1fr; gap: 8px; } }
+.settings-section + .settings-section { margin-top: 32px; }
+.section-heading { margin: 0 0 14px; }
+.section-heading h2 { margin: 0; font-size: 19px; }
+.section-heading p { margin: 4px 0 0; color: var(--muted); }
