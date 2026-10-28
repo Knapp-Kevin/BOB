@@ -25,8 +25,18 @@ pub fn run() {
         }))
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
-            let store = state::Store::open(&data_dir)
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
+            let store = match state::Store::open(&data_dir) {
+                Ok(store) => store,
+                Err(error) => {
+                    // A GUI launch has no console, so a busy profile must be reported
+                    // visibly rather than as a setup panic on stderr.
+                    if let Some(busy) = error.downcast_ref::<state::ProfileInUse>() {
+                        report_profile_in_use(busy);
+                        std::process::exit(1);
+                    }
+                    return Err(std::io::Error::other(error.to_string()).into());
+                }
+            };
             work::normalize_store(&store)
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
             let gemini = gemini::GeminiCredentials::new()
@@ -81,4 +91,32 @@ fn focus_main_window(app: &tauri::AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+#[cfg(windows)]
+fn report_profile_in_use(busy: &state::ProfileInUse) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONWARNING, MB_OK};
+    let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let title = wide("B.O.B. is already open");
+    let body = wide(&format!(
+        "B.O.B. could not start because its data is in use by another program.
+
+{busy}
+
+Nothing was changed."
+    ));
+    // SAFETY: both buffers are NUL-terminated UTF-16 and outlive the call.
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            body.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONWARNING,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn report_profile_in_use(busy: &state::ProfileInUse) {
+    eprintln!("{busy}");
 }

@@ -58,6 +58,25 @@ pub struct Store {
     _profile_lock: ProfileLock,
 }
 
+/// Another process holds the profile lock. Startup reports this to the user
+/// instead of failing silently (see `lib.rs`).
+#[derive(Debug)]
+pub struct ProfileInUse {
+    pub profile: String,
+}
+
+impl std::fmt::Display for ProfileInUse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "another B.O.B. instance is already using the profile at {}; close it before starting B.O.B. again",
+            self.profile
+        )
+    }
+}
+
+impl std::error::Error for ProfileInUse {}
+
 /// Exclusive claim on one app-data profile for the lifetime of a `Store`.
 ///
 /// Canonical saves replace the whole work state, so two processes writing the same
@@ -83,10 +102,12 @@ impl ProfileLock {
         match options.open(&path) {
             Ok(file) => Ok(Self { _file: file }),
             #[cfg(windows)]
-            Err(error) if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION) => bail!(
-                "another B.O.B. instance is already using the profile at {}; close it before starting B.O.B. again",
-                app_data_dir.display()
-            ),
+            Err(error) if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION) => {
+                Err(ProfileInUse {
+                    profile: app_data_dir.display().to_string(),
+                }
+                .into())
+            }
             Err(error) => Err(error)
                 .with_context(|| format!("claim B.O.B. profile lock at {}", path.display())),
         }
@@ -803,6 +824,10 @@ mod tests {
         assert!(
             format!("{error:#}").contains("already using the profile"),
             "unexpected error: {error:#}"
+        );
+        assert!(
+            error.downcast_ref::<ProfileInUse>().is_some(),
+            "startup must be able to recognise a busy profile: {error:#}"
         );
         assert_eq!(first.load()?, sample_state());
 
