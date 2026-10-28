@@ -6,6 +6,9 @@ use tauri::State;
 
 const SCHEMA_VERSION: i64 = 3;
 const DATABASE_NAME: &str = "bob.sqlite3";
+const PROFILE_LOCK_NAME: &str = "bob.profile.lock";
+#[cfg(windows)]
+const ERROR_SHARING_VIOLATION: i32 = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,6 +47,43 @@ pub struct AccessibilityPreferences {
 
 pub struct Store {
     connection: Mutex<Connection>,
+    // Declared after the connection so the connection closes before the claim is released.
+    _profile_lock: ProfileLock,
+}
+
+/// Exclusive claim on one app-data profile for the lifetime of a `Store`.
+///
+/// Canonical saves replace the whole work state, so two processes writing the same
+/// profile silently drop each other's changes. On Windows the claim is an unshared
+/// handle on a lock file; the OS releases it when the process exits, including after a
+/// crash, so there is no stale lock to clean up. Other platforms rely on the
+/// single-instance plugin registered in `lib.rs`.
+struct ProfileLock {
+    _file: fs::File,
+}
+
+impl ProfileLock {
+    fn acquire(app_data_dir: &Path) -> Result<Self> {
+        let path = app_data_dir.join(PROFILE_LOCK_NAME);
+        let mut options = fs::OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.share_mode(0);
+        }
+
+        match options.open(&path) {
+            Ok(file) => Ok(Self { _file: file }),
+            #[cfg(windows)]
+            Err(error) if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION) => bail!(
+                "another B.O.B. instance is already using the profile at {}; close it before starting B.O.B. again",
+                app_data_dir.display()
+            ),
+            Err(error) => Err(error)
+                .with_context(|| format!("claim B.O.B. profile lock at {}", path.display())),
+        }
+    }
 }
 
 impl Store {
@@ -54,6 +94,7 @@ impl Store {
                 app_data_dir.display()
             )
         })?;
+        let profile_lock = ProfileLock::acquire(app_data_dir)?;
 
         let db_path = app_data_dir.join(DATABASE_NAME);
         let existed_before_open = db_path.exists();
@@ -71,6 +112,7 @@ impl Store {
 
         Ok(Self {
             connection: Mutex::new(connection),
+            _profile_lock: profile_lock,
         })
     }
 
@@ -610,6 +652,29 @@ mod tests {
         store.save(&expected)?;
 
         assert_eq!(store.load()?, expected);
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn second_store_on_same_profile_fails_closed_until_first_closes() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let first = Store::open(directory.path())?;
+        first.save(&sample_state())?;
+
+        let error = match Store::open(directory.path()) {
+            Ok(_) => panic!("a second store must not open a profile that is already in use"),
+            Err(error) => error,
+        };
+        assert!(
+            format!("{error:#}").contains("already using the profile"),
+            "unexpected error: {error:#}"
+        );
+        assert_eq!(first.load()?, sample_state());
+
+        drop(first);
+        let reopened = Store::open(directory.path())?;
+        assert_eq!(reopened.load()?, sample_state());
         Ok(())
     }
 
