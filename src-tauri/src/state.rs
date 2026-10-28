@@ -162,21 +162,39 @@ impl Store {
     }
 
     pub fn load_chat(&self) -> Result<Vec<ChatEntry>> {
-        let connection = self.connection.lock().map_err(|_| anyhow!("canonical state lock is poisoned"))?;
-        let mut statement = connection.prepare("SELECT author, text FROM chat_entries ORDER BY id ASC")?;
-        let entries = statement.query_map([], |row| Ok(ChatEntry { author: row.get(0)?, text: row.get(1)? }))?
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let mut statement =
+            connection.prepare("SELECT author, text FROM chat_entries ORDER BY id ASC")?;
+        let entries = statement
+            .query_map([], |row| {
+                Ok(ChatEntry {
+                    author: row.get(0)?,
+                    text: row.get(1)?,
+                })
+            })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(entries)
     }
 
     pub fn append_chat(&self, entry: ChatEntry) -> Result<Vec<ChatEntry>> {
         if !matches!(entry.author.as_str(), "user" | "bob")
-            || entry.text.trim().is_empty() || entry.text.len() > 8_000 {
+            || entry.text.trim().is_empty()
+            || entry.text.len() > 8_000
+        {
             bail!("invalid chat entry");
         }
-        let mut connection = self.connection.lock().map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let mut connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        transaction.execute("INSERT INTO chat_entries (author, text) VALUES (?1, ?2)", params![entry.author, entry.text])?;
+        transaction.execute(
+            "INSERT INTO chat_entries (author, text) VALUES (?1, ?2)",
+            params![entry.author, entry.text],
+        )?;
         // Retain the most recent 200 turns to bound storage and on-screen context.
         transaction.execute("DELETE FROM chat_entries WHERE id NOT IN (SELECT id FROM chat_entries ORDER BY id DESC LIMIT 200)", [])?;
         transaction.commit()?;
@@ -185,7 +203,10 @@ impl Store {
     }
 
     pub fn clear_chat(&self) -> Result<()> {
-        let connection = self.connection.lock().map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
         connection.execute("DELETE FROM chat_entries", [])?;
         Ok(())
     }
@@ -283,7 +304,10 @@ pub fn load_chat_history(store: State<'_, Store>) -> std::result::Result<Vec<Cha
 }
 
 #[tauri::command]
-pub fn append_chat_message(store: State<'_, Store>, entry: ChatEntry) -> std::result::Result<Vec<ChatEntry>, String> {
+pub fn append_chat_message(
+    store: State<'_, Store>,
+    entry: ChatEntry,
+) -> std::result::Result<Vec<ChatEntry>, String> {
     store.append_chat(entry).map_err(|error| error.to_string())
 }
 
@@ -541,14 +565,16 @@ fn run_migrations(
                      PRAGMA user_version = 3;",
                 )
                 .context("apply schema migration 3")?,
-            3 => transaction.execute_batch(
-                "CREATE TABLE chat_entries (
+            3 => transaction
+                .execute_batch(
+                    "CREATE TABLE chat_entries (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     author TEXT NOT NULL CHECK(author IN ('user', 'bob')),
                     text TEXT NOT NULL CHECK(length(text) > 0)
                 );
-                PRAGMA user_version = 4;"
-            ).context("apply schema migration 4")?,
+                PRAGMA user_version = 4;",
+                )
+                .context("apply schema migration 4")?,
             other => bail!("no migration path exists from schema version {other}"),
         }
 
@@ -677,9 +703,20 @@ mod tests {
         let directory = tempfile::tempdir()?;
         {
             let store = Store::open(directory.path())?;
-            store.append_chat(ChatEntry { author: "user".into(), text: "Return to this tomorrow".into() })?;
-            store.append_chat(ChatEntry { author: "bob".into(), text: "I'll keep the context.".into() })?;
-            assert!(store.append_chat(ChatEntry { author: "system".into(), text: "bad".into() }).is_err());
+            store.append_chat(ChatEntry {
+                author: "user".into(),
+                text: "Return to this tomorrow".into(),
+            })?;
+            store.append_chat(ChatEntry {
+                author: "bob".into(),
+                text: "I'll keep the context.".into(),
+            })?;
+            assert!(store
+                .append_chat(ChatEntry {
+                    author: "system".into(),
+                    text: "bad".into()
+                })
+                .is_err());
         }
         let reopened = Store::open(directory.path())?;
         let history = reopened.load_chat()?;
@@ -694,7 +731,10 @@ mod tests {
         let directory = tempfile::tempdir()?;
         let store = Store::open(directory.path())?;
         store.save(&sample_state())?;
-        store.append_chat(ChatEntry { author: "user".into(), text: "Private context".into() })?;
+        store.append_chat(ChatEntry {
+            author: "user".into(),
+            text: "Private context".into(),
+        })?;
         store.clear_chat()?;
         assert!(store.load_chat()?.is_empty());
         assert_eq!(store.load()?, sample_state());
@@ -749,7 +789,11 @@ mod tests {
             }
         );
         assert!(upgraded.load_chat()?.is_empty());
-        assert!(directory.path().join("recovery").join("bob-pre-migration-1.sqlite3").exists());
+        assert!(directory
+            .path()
+            .join("recovery")
+            .join("bob-pre-migration-1.sqlite3")
+            .exists());
         Ok(())
     }
 
