@@ -727,6 +727,25 @@ mod tests {
     }
 
     #[test]
+    fn rejects_chat_over_byte_limit_without_partial_write() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        store.append_chat(ChatEntry {
+            author: "user".into(),
+            text: "valid".into(),
+        })?;
+        assert!(store
+            .append_chat(ChatEntry {
+                author: "user".into(),
+                text: "🧠".repeat(2_001),
+            })
+            .is_err());
+        assert_eq!(store.load_chat()?.len(), 1);
+        assert_eq!(store.load_chat()?[0].text, "valid");
+        Ok(())
+    }
+
+    #[test]
     fn clearing_chat_preserves_canonical_work_state() -> Result<()> {
         let directory = tempfile::tempdir()?;
         let store = Store::open(directory.path())?;
