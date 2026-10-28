@@ -23,8 +23,19 @@ const replyFor = (input: string) => {
 const queueRender = () => render();
 window.addEventListener("bob:render", queueRender);
 
+// The Chat panel has a fixed height; keep the reader's scroll position across
+// full re-renders and follow the conversation only when its content changes.
+let renderedChatLength = -1;
+
 export function render() {
+  const previousScroll = root.querySelector<HTMLElement>(".messages")?.scrollTop;
   root.innerHTML = renderShell();
+  const messages = root.querySelector<HTMLElement>(".messages");
+  if (messages) {
+    const changed = state.chat.length !== renderedChatLength || previousScroll === undefined;
+    messages.scrollTop = changed ? messages.scrollHeight : previousScroll;
+  }
+  renderedChatLength = state.chat.length;
   bindEvents();
 }
 

@@ -46,7 +46,7 @@
   .top-grid, .bottom-grid, .inbox-grid, .chat-grid { grid-template-columns: 1fr; }
   .settings-grid { grid-template-columns: 1fr; }
   .gemini { grid-column: auto; }
-  .messages { max-height: 55vh; }
+  .messages { height: 55vh; }
 }
 @media (max-width: 800px) {
   .shell { grid-template-columns: 76px minmax(0,1fr); }
