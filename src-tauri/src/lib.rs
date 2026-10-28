@@ -30,10 +30,22 @@ pub fn run() {
                 Err(error) => {
                     // A GUI launch has no console, so a busy profile must be reported
                     // visibly rather than as a setup panic on stderr.
-                    if let Some(busy) = error.downcast_ref::<state::ProfileInUse>() {
-                        report_profile_in_use(busy);
-                        std::process::exit(1);
-                    }
+                    let error = match error.downcast::<state::ProfileInUse>() {
+                        Ok(busy) => {
+                            // Nothing is managed, so the frontend would fall back to
+                            // sample data; keep every window hidden until exit.
+                            for window in app.webview_windows().values() {
+                                let _ = window.hide();
+                            }
+                            let handle = app.handle().clone();
+                            std::thread::spawn(move || {
+                                report_profile_in_use(&busy);
+                                handle.exit(1);
+                            });
+                            return Ok(());
+                        }
+                        Err(error) => error,
+                    };
                     return Err(std::io::Error::other(error.to_string()).into());
                 }
             };
