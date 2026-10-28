@@ -31,6 +31,7 @@ pub fn run() {
             state::load_work_state,
             state::load_chat_history,
             state::append_chat_message,
+            state::clear_chat_history,
             state::load_accessibility_preferences,
             state::set_accessibility_preferences,
             planner::plan_remaining_work,
