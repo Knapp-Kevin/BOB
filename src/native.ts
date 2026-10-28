@@ -7,6 +7,11 @@ export async function loadChatHistory(): Promise<{ author: "user" | "bob"; text:
   return invoke("load_chat_history");
 }
 
+export async function clearChatHistory(): Promise<void> {
+  if (!isTauriRuntime()) return;
+  await invoke("clear_chat_history");
+}
+
 export async function appendChatMessage(entry: { author: "user" | "bob"; text: string }): Promise<{ author: "user" | "bob"; text: string }[] | null> {
   if (!isTauriRuntime()) return null;
   return invoke("append_chat_message", { entry });
