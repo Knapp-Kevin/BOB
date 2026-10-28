@@ -1,6 +1,7 @@
 import { activeItem, applyPlanProjection, escapeHtml, focusItems, hydratePersistentWorkState, showToast, state, type ItemKind, type ReplanResult, type Route, type SetupStep } from "./model";
-import { appendChatMessage, clearChatHistory, applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, resumeDeferredTask, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
+import { generateWithOpenRouter, appendChatMessage, clearChatHistory, applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, resumeDeferredTask, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
 import { renderShell } from "./views";
+import { saveOpenRouterAuthorization, saveOpenRouterKey, removeOpenRouterKey, openRouterChatEnabled, openRouterFailureMessage, refreshOpenRouter, setOpenRouterChatEnabled } from "./openrouter_ui";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
 if (!root) throw new Error("Missing app root");
@@ -22,8 +23,19 @@ const replyFor = (input: string) => {
 const queueRender = () => render();
 window.addEventListener("bob:render", queueRender);
 
+// The Chat panel has a fixed height; keep the reader's scroll position across
+// full re-renders and follow the conversation only when its content changes.
+let renderedChatLength = -1;
+
 export function render() {
+  const previousScroll = root.querySelector<HTMLElement>(".messages")?.scrollTop;
   root.innerHTML = renderShell();
+  const messages = root.querySelector<HTMLElement>(".messages");
+  if (messages) {
+    const changed = state.chat.length !== renderedChatLength || previousScroll === undefined;
+    messages.scrollTop = changed ? messages.scrollHeight : previousScroll;
+  }
+  renderedChatLength = state.chat.length;
   bindEvents();
 }
 
@@ -86,7 +98,24 @@ function pushConversation(text: string) {
     render();
     let response: string;
     try {
-      response = (await assistWithBob(text)) ?? replyFor(text);
+      if (openRouterChatEnabled) {
+        if (chatByteLength(text) > 4_000) {
+          showToast("OpenRouter accepts up to 4,000 UTF-8 bytes per prompt. Nothing was sent to the provider.");
+          response = "That request is too long for the selected cloud model. Shorten it or turn off OpenRouter in Settings.";
+        } else {
+          try {
+            response = await generateWithOpenRouter(text);
+          } catch (error) {
+            console.error("OpenRouter inference unavailable", error);
+            showToast(`${openRouterFailureMessage(error)} B.O.B. is using local guidance for this response.`);
+            // Resynchronize with the backend grant, which may have been revoked.
+            await refreshOpenRouter();
+            response = (await assistWithBob(text)) ?? replyFor(text);
+          }
+        }
+      } else {
+        response = (await assistWithBob(text)) ?? replyFor(text);
+      }
     } catch (error) {
       console.error("B.O.B. assist failed; using deterministic guidance", error);
       response = replyFor(text);
@@ -353,6 +382,36 @@ function bindEvents() {
         console.error("Failed to create B.O.B. portable export", error);
         showToast("B.O.B. could not create the portable export. Canonical state was not changed.");
       });
+  });
+
+  document.querySelector("#openrouter-chat")?.addEventListener("change", (event) => {
+    const enabled = (event.target as HTMLInputElement).checked;
+    if (enabled && !window.confirm("Send your Chat prompts to your approved OpenRouter model? Usage may incur separate charges. This only applies to this app session.")) {
+      render();
+      return;
+    }
+    void setOpenRouterChatEnabled(enabled).then((applied) => {
+      if (applied) showToast(openRouterChatEnabled ? "OpenRouter Chat enabled for this session." : "Local B.O.B. Chat restored.");
+    }).finally(render);
+  });
+  document.querySelector("#openrouter-config")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const modelId = document.querySelector<HTMLInputElement>("#openrouter-model")?.value.trim() || null;
+    const cloudEnabled = Boolean(document.querySelector<HTMLInputElement>("#openrouter-cloud")?.checked);
+    const meteredEnabled = Boolean(document.querySelector<HTMLInputElement>("#openrouter-metered")?.checked);
+    if (cloudEnabled && meteredEnabled && !window.confirm("Authorize sending Chat prompts to OpenRouter using the selected model? This can incur separately billed API usage.")) return;
+    void saveOpenRouterAuthorization({ modelId, cloudEnabled, meteredEnabled }).finally(render);
+  });
+  document.querySelector("#openrouter-credential")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const input = document.querySelector<HTMLInputElement>("#openrouter-key");
+    const key = input?.value ?? "";
+    if (input) input.value = "";
+    void saveOpenRouterKey(key).finally(render);
+  });
+  document.querySelector("#openrouter-remove-key")?.addEventListener("click", () => {
+    if (!window.confirm("Remove the saved OpenRouter API key?")) return;
+    void removeOpenRouterKey().finally(render);
   });
 
   document.querySelector("#setup")?.addEventListener("click", () => openSetup());

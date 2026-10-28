@@ -66,6 +66,8 @@ Provider/model changes that materially affect billing, privacy, locality, or use
 
 The currently implemented cloud adapter is Gemini Developer API, retained as an **advanced optional** capability behind its accepted professional/business-use, unpaid-service data-use, credential, and billing boundaries.
 
+An optional, default-disabled OpenRouter Chat path is implemented as an explicitly enabled `metered` cloud capability; its boundary is defined in `docs/governance/AI_COST_AND_PROVIDER_POLICY.md`.
+
 RFC-0002 defines the accepted provider-independent runtime contract. The Rust-owned runtime policy and a bounded non-user-facing Ollama tracer are implemented on `master`.
 
 Wayfinder #79 and resolved research #80/#81 establish the current direction:

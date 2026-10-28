@@ -46,7 +46,7 @@
   .top-grid, .bottom-grid, .inbox-grid, .chat-grid { grid-template-columns: 1fr; }
   .settings-grid { grid-template-columns: 1fr; }
   .gemini { grid-column: auto; }
-  .messages { max-height: 55vh; }
+  .messages { height: 55vh; }
 }
 @media (max-width: 800px) {
   .shell { grid-template-columns: 76px minmax(0,1fr); }
@@ -65,3 +65,16 @@
   .setup-actions { flex-direction: column; }
   .setup-actions > * { width: 100%; }
 }
+.openrouter label.field { flex-direction: column; align-items: stretch; gap: 8px; }
+.openrouter label.field input { width: 100%; height: 40px; padding: 0 12px; border: 1px solid #d4dfe9; border-radius: 10px; font: inherit; }
+.openrouter label.check { justify-content: flex-start; gap: 12px; }
+.openrouter label.check input { width: 22px; flex: none; }
+.openrouter form + label, .openrouter form { margin-top: 8px; }
+.openrouter { grid-column: 1/-1; }
+.openrouter-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; }
+.openrouter-columns .primary + .plain, .openrouter #openrouter-remove-key { margin-top: 10px; }
+@media (max-width: 1100px) { .openrouter-columns { grid-template-columns: 1fr; gap: 8px; } }
+.settings-section + .settings-section { margin-top: 32px; }
+.section-heading { margin: 0 0 14px; }
+.section-heading h2 { margin: 0; font-size: 19px; }
+.section-heading p { margin: 4px 0 0; color: var(--muted); }

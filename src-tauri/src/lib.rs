@@ -2,7 +2,10 @@ mod agent;
 mod backup;
 mod export;
 mod gemini;
+pub mod inference_policy;
+pub mod inference_transport;
 pub mod ollama;
+mod openrouter;
 mod planner;
 mod proposals;
 pub mod runtime;
@@ -25,6 +28,7 @@ pub fn run() {
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
             app.manage(store);
             app.manage(gemini);
+            app.manage(openrouter::OpenRouterCredentials::new());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -53,6 +57,13 @@ pub fn run() {
             gemini::gemini_credential_status,
             gemini::configure_gemini_credential,
             gemini::remove_gemini_credential,
+            openrouter::openrouter_settings,
+            openrouter::configure_openrouter_model,
+            openrouter::set_openrouter_chat_session,
+            openrouter::generate_openrouter,
+            openrouter::openrouter_credential_status,
+            openrouter::configure_openrouter_credential,
+            openrouter::remove_openrouter_credential,
             gemini::generate_gemini_context
         ])
         .run(tauri::generate_context!())
