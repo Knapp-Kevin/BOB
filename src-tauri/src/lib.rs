@@ -59,6 +59,7 @@ pub fn run() {
             gemini::remove_gemini_credential,
             openrouter::openrouter_settings,
             openrouter::configure_openrouter_model,
+            openrouter::set_openrouter_chat_session,
             openrouter::generate_openrouter,
             openrouter::openrouter_credential_status,
             openrouter::configure_openrouter_credential,
