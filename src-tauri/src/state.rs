@@ -704,6 +704,56 @@ mod tests {
     }
 
     #[test]
+    fn chat_history_retains_latest_two_hundred_messages() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+
+        for number in 0..205 {
+            store.append_chat(ChatEntry {
+                author: "user".into(),
+                text: format!("Message {number}"),
+            })?;
+        }
+
+        let history = store.load_chat()?;
+        assert_eq!(history.len(), 200);
+        assert_eq!(history[0].text, "Message 5");
+        assert_eq!(history[199].text, "Message 204");
+        Ok(())
+    }
+
+    #[test]
+    fn v3_to_v4_migration_preserves_existing_work_and_preferences() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        {
+            let store = Store::open(directory.path())?;
+            store.save(&sample_state())?;
+            store.save_accessibility_preferences(AccessibilityPreferences {
+                larger_text: true,
+                reduced_motion: false,
+            })?;
+        }
+
+        let db_path = directory.path().join(DATABASE_NAME);
+        let legacy = Connection::open(&db_path)?;
+        legacy.execute_batch("DROP TABLE chat_entries; PRAGMA user_version = 3;")?;
+        drop(legacy);
+
+        let upgraded = Store::open(directory.path())?;
+        assert_eq!(upgraded.load()?, sample_state());
+        assert_eq!(
+            upgraded.load_accessibility_preferences()?,
+            AccessibilityPreferences {
+                larger_text: true,
+                reduced_motion: false,
+            }
+        );
+        assert!(upgraded.load_chat()?.is_empty());
+        assert!(directory.path().join("recovery").join("bob-pre-migration-1.sqlite3").exists());
+        Ok(())
+    }
+
+    #[test]
     fn round_trips_accessibility_preferences() -> Result<()> {
         let directory = tempfile::tempdir()?;
         let store = Store::open(directory.path())?;
