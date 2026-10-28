@@ -138,9 +138,17 @@ MSI is deferred for the current alpha. It duplicates the installer surface and a
 
 macOS/Linux installers, cross-platform matrices, store publication, auto-update infrastructure, and broad release automation are deferred until a later release requires them.
 
-## Code signing
+## Code signing and release gate separation
 
-A clearly identified local/developer alpha may be built and reviewed before a production signing certificate exists. Broad external distribution must not be described as production-ready until the Windows signing/distribution policy is implemented and validated.
+A Windows signing certificate is **not a prerequisite** for compiling, packaging, locally installing, or qualifying a clearly labeled developer/controlled alpha. Treat these as separate outcomes:
+
+1. **Unsigned native engineering acceptance:** build the exact locked NSIS package, record its SHA-256, and complete the Windows 11 x64 install/launch/relaunch/state-retention/uninstall evidence under issue #84. Report SmartScreen or publisher warnings as observed evidence; never silently bypass system policy or instruct users to disable security protections.
+2. **Controlled alpha readiness:** after recovery issue #85 and native acceptance #84 are truthfully dispositioned, run the integrated alpha convergence audit #30. The unsigned build may be shared only in an explicitly controlled test setting with disclosed publisher/reputation warnings, verified artifact provenance, and an informed participant. This is not general distribution approval.
+3. **Broad distribution readiness:** establish the applicable code-signing, publisher reputation, installer provenance, and distribution policy separately before making broad trusted-install or production claims. Certificate acquisition or Microsoft's signing process does not itself establish application correctness, and its absence must not falsely block engineering qualification.
+
+Never mark a native gate passed because signing is pending, and never mark native execution blocked *solely* because a signing certificate is unavailable. If platform policy actually prevents unsigned execution, record the precise error and use a permitted, properly isolated test environment rather than weakening OS protections.
+
+The readiness record must distinguish: `package built`, `native acceptance evidenced`, `controlled alpha qualified`, and `broad distribution authorized`. Each claim requires its own evidence.
 
 ## Hosted CI boundary
 
