@@ -781,6 +781,25 @@ mod tests {
     }
 
     #[test]
+    fn openrouter_settings_are_deny_by_default_and_survive_reopen() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        assert_eq!(store.openrouter_settings()?, (None, false, false));
+        assert!(store.set_openrouter_settings(Some("bad model"), true, true).is_err());
+        assert_eq!(store.openrouter_settings()?, (None, false, false));
+        store.set_openrouter_settings(Some("vendor/approved-model"), true, false)?;
+        drop(store);
+        let reopened = Store::open(directory.path())?;
+        assert_eq!(
+            reopened.openrouter_settings()?,
+            (Some("vendor/approved-model".into()), true, false)
+        );
+        reopened.set_openrouter_settings(None, false, false)?;
+        assert_eq!(reopened.openrouter_settings()?, (None, false, false));
+        Ok(())
+    }
+
+    #[test]
     fn clearing_chat_preserves_canonical_work_state() -> Result<()> {
         let directory = tempfile::tempdir()?;
         let store = Store::open(directory.path())?;
