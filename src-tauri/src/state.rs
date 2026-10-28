@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fs, path::Path, sync::Mutex, time::Duration};
 use tauri::State;
 
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 const DATABASE_NAME: &str = "bob.sqlite3";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -158,6 +158,30 @@ impl Store {
         transaction
             .commit()
             .context("commit canonical work-state transaction")?;
+        Ok(())
+    }
+
+    pub fn openrouter_settings(&self) -> Result<(Option<String>, bool, bool)> {
+        let connection = self.connection.lock().map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        connection.query_row(
+            "SELECT model_id, cloud_enabled, metered_enabled FROM openrouter_settings WHERE singleton = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get::<_, i64>(1)? != 0, row.get::<_, i64>(2)? != 0)),
+        ).context("read OpenRouter authorization")
+    }
+
+    pub fn set_openrouter_settings(&self, model: Option<&str>, cloud: bool, metered: bool) -> Result<()> {
+        if let Some(model) = model {
+            if model.is_empty() || model.len() > 256 || model.trim() != model
+                || model.chars().any(|c| c.is_whitespace() || c.is_control()) {
+                bail!("invalid OpenRouter model identifier");
+            }
+        }
+        let connection = self.connection.lock().map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        connection.execute(
+            "UPDATE openrouter_settings SET model_id = ?1, cloud_enabled = ?2, metered_enabled = ?3 WHERE singleton = 1",
+            params![model, i64::from(cloud), i64::from(metered)],
+        )?;
         Ok(())
     }
 
@@ -575,6 +599,17 @@ fn run_migrations(
                 PRAGMA user_version = 4;",
                 )
                 .context("apply schema migration 4")?,
+            4 => transaction.execute_batch(
+                "CREATE TABLE openrouter_settings (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                    model_id TEXT,
+                    cloud_enabled INTEGER NOT NULL DEFAULT 0 CHECK(cloud_enabled IN (0, 1)),
+                    metered_enabled INTEGER NOT NULL DEFAULT 0 CHECK(metered_enabled IN (0, 1))
+                );
+                INSERT INTO openrouter_settings(singleton, model_id, cloud_enabled, metered_enabled)
+                VALUES (1, NULL, 0, 0);
+                PRAGMA user_version = 5;",
+            ).context("apply schema migration 5")?,
             other => bail!("no migration path exists from schema version {other}"),
         }
 
