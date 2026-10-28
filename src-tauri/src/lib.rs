@@ -2,6 +2,7 @@ mod agent;
 mod backup;
 mod export;
 mod gemini;
+pub mod inference_policy;
 pub mod ollama;
 mod planner;
 mod proposals;
