@@ -125,9 +125,18 @@ try {
     Note "Built bob.exe sha256=$builtHash"
 
     Install 'install'
-    Check 'installed exe matches build' ((Get-FileHash -LiteralPath $InstalledExe).Hash -eq $builtHash) $InstalledExe
+    # Tauri patches bob.exe while bundling, so the target build is not the byte-exact
+    # payload; compare the installed copy with the one inside the installer instead.
+    $payloadDir = Join-Path $env:TEMP 'bob-installer-payload'
+    Remove-Item -Recurse -Force $payloadDir -ErrorAction SilentlyContinue
+    & 7z e $Installer 'bob.exe' -r "-o$payloadDir" -y | Out-Null
+    $payload = Join-Path $payloadDir 'bob.exe'
+    if (-not (Test-Path $payload)) { throw "could not extract bob.exe from the installer with 7-Zip" }
+    $payloadHash = (Get-FileHash -LiteralPath $payload).Hash
+    $installedHash = (Get-FileHash -LiteralPath $InstalledExe).Hash
+    Check 'installed exe matches installer payload' ($installedHash -eq $payloadHash) "installed=$installedHash payload=$payloadHash (target build, for reference: $builtHash)"
     & (Join-Path $PSScriptRoot 'check-installed-windows-subsystem.ps1') -Executable $InstalledExe -Installer $Installer `
-        -EvidencePath (Join-Path $EvidenceDir 'installed-pe-evidence.json') -ExpectedExecutableSHA256 $builtHash -ExpectedInstallerSHA256 $installerHash
+        -EvidencePath (Join-Path $EvidenceDir 'installed-pe-evidence.json') -ExpectedExecutableSHA256 $payloadHash -ExpectedInstallerSHA256 $installerHash
     Check 'PE checker (GUI subsystem 2, hashes)' $true 'scripts/check-installed-windows-subsystem.ps1 passed'
 
     # First launch on a fresh profile.
