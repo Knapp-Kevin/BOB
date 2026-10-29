@@ -40,7 +40,7 @@ pub fn run() {
                             let handle = app.handle().clone();
                             std::thread::spawn(move || {
                                 report_profile_in_use(&busy);
-                                handle.exit(1);
+                                exit_failed_startup(&handle);
                             });
                             return Ok(());
                         }
@@ -61,6 +61,11 @@ pub fn run() {
             app.manage(store);
             app.manage(gemini);
             app.manage(openrouter::OpenRouterCredentials::new());
+            // The window is created hidden (tauri.conf.json) and shown only once the
+            // canonical Store is open and valid, so a failed startup never flashes it.
+            if let Some(window) = app.get_webview_window("main") {
+                window.show()?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -102,6 +107,13 @@ pub fn run() {
         .expect("error while running B.O.B.");
 }
 
+// AppHandle::exit drops its code (the event loop ends with a plain Exit), so a
+// fail-closed startup exits directly with a non-zero status after Tauri cleanup.
+fn exit_failed_startup(handle: &tauri::AppHandle) -> ! {
+    handle.cleanup_before_exit();
+    std::process::exit(1);
+}
+
 // Fail closed before the frontend can render sample fixtures without a valid
 // canonical Store. Details remain in diagnostic stderr, not in the GUI alert.
 fn show_startup_failure_and_exit(app: &mut tauri::App, message: &'static str) {
@@ -111,7 +123,7 @@ fn show_startup_failure_and_exit(app: &mut tauri::App, message: &'static str) {
     let handle = app.handle().clone();
     std::thread::spawn(move || {
         report_startup_failure(message);
-        handle.exit(1);
+        exit_failed_startup(&handle);
     });
 }
 
@@ -138,6 +150,11 @@ fn report_startup_failure(message: &str) {
 }
 
 fn focus_main_window(app: &tauri::AppHandle) {
+    // A failed startup has no Store and is waiting on its error dialog; showing its
+    // window would reveal the frontend's sample fixtures instead of saved work.
+    if app.try_state::<state::Store>().is_none() {
+        return;
+    }
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
