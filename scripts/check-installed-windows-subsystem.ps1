@@ -3,7 +3,9 @@
 # Does not launch B.O.B. or modify the user profile.
 param(
     [Parameter(Mandatory = $true)]
-    [string] $Executable
+    [string] $Executable,
+    [string] $Installer,
+    [string] $EvidencePath
 )
 $ErrorActionPreference = 'Stop'
 $resolved = (Resolve-Path -LiteralPath $Executable -ErrorAction Stop).Path
@@ -23,16 +25,44 @@ try {
         $stream.Position = $peOffset + 24 + 68
         $subsystem = $reader.ReadUInt16()
         $hash = (Get-FileHash -LiteralPath $resolved -Algorithm SHA256).Hash
+        $signature = Get-AuthenticodeSignature -LiteralPath $resolved
+        $installerEvidence = $null
+        if ($Installer) {
+            $installerPath = (Resolve-Path -LiteralPath $Installer -ErrorAction Stop).Path
+            $installerEvidence = [pscustomobject]@{
+                Path = $installerPath
+                SHA256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash
+                SignatureStatus = (Get-AuthenticodeSignature -LiteralPath $installerPath).Status.ToString()
+            }
+        }
         $result = [pscustomobject]@{
             Executable = $resolved
             SHA256 = $hash
             PESubsystem = $subsystem
             GUIExpected = 2
+            SignatureStatus = $signature.Status.ToString()
+            Installer = $installerEvidence
             Passed = ($subsystem -eq 2)
         }
         $result | Format-List
+        if ($EvidencePath) {
+            $evidence = [pscustomobject]@{
+                CapturedAtUtc = [DateTime]::UtcNow.ToString("o")
+                HostOS = [System.Environment]::OSVersion.VersionString
+                Check = "Installed Windows PE GUI subsystem"
+                Result = $result
+            }
+            $json = $evidence | ConvertTo-Json -Depth 6
+            $target = [System.IO.Path]::GetFullPath($EvidencePath)
+            $directory = [System.IO.Path]::GetDirectoryName($target)
+            if (-not [System.IO.Directory]::Exists($directory)) {
+                throw "Evidence directory does not exist: $directory"
+            }
+            [System.IO.File]::WriteAllText($target, $json, [System.Text.UTF8Encoding]::new($false))
+            Write-Host "Evidence written to $target"
+        }
         if ($subsystem -ne 2) { throw "Installed executable is not a Windows GUI-subsystem binary: $subsystem" }
     } finally { $reader.Dispose() }
 } finally { $stream.Dispose() }
 Write-Host 'PASS: installed executable uses Windows GUI subsystem (2).'
-Write-Host 'This is a read-only header check, NOT a launch, multi-instance, or NSIS uninstall qualification.'
+Write-Host 'This verifies PE metadata only; it does NOT establish native launch, multi-instance, or NSIS uninstall qualification.'
