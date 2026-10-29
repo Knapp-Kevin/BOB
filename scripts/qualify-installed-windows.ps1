@@ -4,8 +4,10 @@
 # It changes no security policy; a blocked installer or executable fails the run.
 param(
     [Parameter(Mandatory = $true)] [string] $Installer,
-    [Parameter(Mandatory = $true)] [string] $BuiltExecutable,
-    [Parameter(Mandatory = $true)] [string] $EvidenceDir
+    [string] $BuiltExecutable,
+    [Parameter(Mandatory = $true)] [string] $EvidenceDir,
+    # Known SHA-256 of the bob.exe payload, for hosts without 7-Zip (Windows Sandbox).
+    [string] $ExpectedPayloadSHA256
 )
 $ErrorActionPreference = 'Stop'
 $MainTitle = 'B.O.B. | Better Organized Brain'
@@ -78,7 +80,7 @@ function Start-Bob([string] $Exe, [hashtable] $Environment = @{}) {
 }
 function Bob-Processes { @(Get-Process | Where-Object { $_.Path -and $_.Path -ieq $script:InstalledExe }) }
 function Snapshot([string] $Path) {
-    $code = "import sqlite3,sys`nc=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True)`nitems=','.join(r[0] for r in c.execute('select id from work_items order by id'))`nchat=c.execute('select count(*) from chat_entries').fetchone()[0]`nprint('schema=%d items=%s chat=%d' % (c.execute('pragma user_version').fetchone()[0], items, chat))"
+    $code = "import sqlite3,sys`nc=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True)`nitems=','.join(r[0] for r in c.execute('select id from work_items order by id'))`nchat=c.execute('select count(*) from chat_entries').fetchone()[0]`nok=c.execute('pragma integrity_check').fetchone()[0]`nrouter=c.execute('select model_id,cloud_enabled,metered_enabled from openrouter_settings').fetchall()`nprint('schema=%d items=%s chat=%d integrity=%s openrouter=%r' % (c.execute('pragma user_version').fetchone()[0], items, chat, ok, router))"
     $file = Join-Path $env:TEMP 'bob-snapshot.py'; Set-Content -LiteralPath $file -Value $code -Encoding ascii
     (python -I $file $Path | Out-String).Trim()
 }
@@ -120,19 +122,23 @@ try {
     Note "Smart App Control VerifiedAndReputablePolicyState=$sac (recorded only; never changed)"
     if (Test-Path $ProfileDir) { throw "a B.O.B. profile already exists at $ProfileDir; this script needs a disposable host" }
     $installerHash = (Get-FileHash -LiteralPath $Installer).Hash
-    $builtHash = (Get-FileHash -LiteralPath $BuiltExecutable).Hash
+    $builtHash = if ($BuiltExecutable) { (Get-FileHash -LiteralPath $BuiltExecutable).Hash } else { 'not supplied' }
     Note "Installer $Installer sha256=$installerHash signature=$((Get-AuthenticodeSignature -LiteralPath $Installer).Status)"
     Note "Built bob.exe sha256=$builtHash"
 
     Install 'install'
     # Tauri patches bob.exe while bundling, so the target build is not the byte-exact
     # payload; compare the installed copy with the one inside the installer instead.
-    $payloadDir = Join-Path $env:TEMP 'bob-installer-payload'
-    Remove-Item -Recurse -Force $payloadDir -ErrorAction SilentlyContinue
-    & 7z e $Installer 'bob.exe' -r "-o$payloadDir" -y | Out-Null
-    $payload = Join-Path $payloadDir 'bob.exe'
-    if (-not (Test-Path $payload)) { throw "could not extract bob.exe from the installer with 7-Zip" }
-    $payloadHash = (Get-FileHash -LiteralPath $payload).Hash
+    if (Get-Command 7z -ErrorAction SilentlyContinue) {
+        $payloadDir = Join-Path $env:TEMP 'bob-installer-payload'
+        Remove-Item -Recurse -Force $payloadDir -ErrorAction SilentlyContinue
+        & 7z e $Installer 'bob.exe' -r "-o$payloadDir" -y | Out-Null
+        $payload = Join-Path $payloadDir 'bob.exe'
+        if (-not (Test-Path $payload)) { throw "could not extract bob.exe from the installer with 7-Zip" }
+        $payloadHash = (Get-FileHash -LiteralPath $payload).Hash
+    } elseif ($ExpectedPayloadSHA256) {
+        $payloadHash = $ExpectedPayloadSHA256.ToUpperInvariant()
+    } else { throw "7-Zip is unavailable and no -ExpectedPayloadSHA256 was supplied" }
     $installedHash = (Get-FileHash -LiteralPath $InstalledExe).Hash
     Check 'installed exe matches installer payload' ($installedHash -eq $payloadHash) "installed=$installedHash payload=$payloadHash (target build, for reference: $builtHash)"
     & (Join-Path $PSScriptRoot 'check-installed-windows-subsystem.ps1') -Executable $InstalledExe -Installer $Installer `
@@ -148,6 +154,8 @@ try {
     Check 'state stored in app data, not install dir' ((Test-Path $Db) -and -not (Test-Path (Join-Path (Split-Path $InstalledExe) 'bob.sqlite3'))) $Db
     Capture $p 'first-launch'
     Check 'normal close' ((Close-Main $p) -eq 0) 'exit 0'
+    $fresh = Snapshot $Db
+    Check 'fresh profile: integrity ok, OpenRouter and cloud/metered off' ($fresh -like '*integrity=ok openrouter=`[(None, 0, 0)`]') $fresh
 
     Seed $Db
     $seeded = Snapshot $Db
