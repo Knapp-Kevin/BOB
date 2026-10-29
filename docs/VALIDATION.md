@@ -134,6 +134,8 @@ Acceptance requires:
 
 When collecting Windows shell/icon evidence, account for Explorer/icon caching separately from the executable's embedded resource so cached presentation is not mistaken for build output.
 
+When the local host cannot build or run unsigned release binaries (for example under Smart App Control), the owner may run `.github/workflows/windows-installer-qualification.yml` on a disposable hosted Windows runner. It runs only on a pushed `qualify/installer-*` branch or a manual dispatch, never on pull requests. It builds through `npm run package:windows`, installs the NSIS package silently, and runs `scripts/qualify-installed-windows.ps1`. That script covers launch, console absence, the PE checker, second-instance handoff, minimized restore and focus, simultaneous launches, persistence across restart and forced termination, a corrupt-database fail-closed start, and uninstall/reinstall without data loss. It changes no security policy and uploads evidence only, not the installer. Because it writes to the host's real B.O.B. profile, it refuses to run where a profile already exists. Never run it on a machine whose data matters.
+
 MSI is deferred for the current alpha. It duplicates the installer surface and adds WiX/VBScript requirements without a current product requirement.
 
 macOS/Linux installers, cross-platform matrices, store publication, auto-update infrastructure, and broad release automation are deferred until a later release requires them.
