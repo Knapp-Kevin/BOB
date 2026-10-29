@@ -32,11 +32,6 @@ pub fn run() {
                     // visibly rather than as a setup panic on stderr.
                     let error = match error.downcast::<state::ProfileInUse>() {
                         Ok(busy) => {
-                            // Nothing is managed, so the frontend would fall back to
-                            // sample data; keep every window hidden until exit.
-                            for window in app.webview_windows().values() {
-                                let _ = window.hide();
-                            }
                             let handle = app.handle().clone();
                             std::thread::spawn(move || {
                                 report_profile_in_use(&busy);
@@ -61,10 +56,12 @@ pub fn run() {
             app.manage(store);
             app.manage(gemini);
             app.manage(openrouter::OpenRouterCredentials::new());
-            // The window is created hidden (tauri.conf.json) and shown only once the
-            // canonical Store is open and valid, so a failed startup never flashes it.
-            if let Some(window) = app.get_webview_window("main") {
-                window.show()?;
+            // The main window is not created at startup (tauri.conf.json). Building it
+            // only once the canonical Store is open and valid means a failed or losing
+            // launch never starts a webview that could show sample fixtures or contend
+            // with the instance that owns the profile.
+            for window_config in &app.config().app.windows {
+                tauri::WebviewWindowBuilder::from_config(app.handle(), window_config)?.build()?;
             }
             Ok(())
         })
@@ -114,12 +111,9 @@ fn exit_failed_startup(handle: &tauri::AppHandle) -> ! {
     std::process::exit(1);
 }
 
-// Fail closed before the frontend can render sample fixtures without a valid
-// canonical Store. Details remain in diagnostic stderr, not in the GUI alert.
+// Fail closed before any window exists, so the frontend never renders sample
+// fixtures without a valid canonical Store. Details stay in diagnostic stderr.
 fn show_startup_failure_and_exit(app: &mut tauri::App, message: &'static str) {
-    for window in app.webview_windows().values() {
-        let _ = window.hide();
-    }
     let handle = app.handle().clone();
     std::thread::spawn(move || {
         report_startup_failure(message);
@@ -150,11 +144,7 @@ fn report_startup_failure(message: &str) {
 }
 
 fn focus_main_window(app: &tauri::AppHandle) {
-    // A failed startup has no Store and is waiting on its error dialog; showing its
-    // window would reveal the frontend's sample fixtures instead of saved work.
-    if app.try_state::<state::Store>().is_none() {
-        return;
-    }
+    // A failed startup never creates the main window, so a handoff to it is a no-op.
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();

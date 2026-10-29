@@ -221,7 +221,8 @@ An alternate host exposing a B.O.B. capability does not receive Delegate authori
 Persistence is local-first and single-user. The accepted contract is:
 
 - one SQLite database owned exclusively by the Rust core as canonical ordinary application state;
-- exactly one B.O.B. process owns an app-data profile at a time: `tauri-plugin-single-instance` hands a second launch to the running window and exits it before setup, and `Store::open` takes an exclusive Windows profile lock (`bob.profile.lock`) that fails closed if another process still holds the profile;
+- exactly one B.O.B. process owns an app-data profile at a time: `tauri-plugin-single-instance` hands a second launch to the running window and exits it before setup, and `Store::open` takes an exclusive Windows profile lock (`bob.profile.lock`) that fails closed if another process still holds the profile, including a simultaneous launch that races past the plugin;
+- the main window is created only after the Store opens and validates; a failed or losing startup never creates a webview, shows a native error, and exits with status 1 without changing the profile;
 - every logical state change commits transactionally or not at all;
 - Rust owns immutable monotonic migrations and startup compatibility checks;
 - schema-changing migrations create SQLite-consistent safety copies and fail closed on open/migration failure;
