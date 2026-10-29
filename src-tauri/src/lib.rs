@@ -46,11 +46,16 @@ pub fn run() {
                         }
                         Err(error) => error,
                     };
-                    return Err(std::io::Error::other(error.to_string()).into());
+                    eprintln!("B.O.B. canonical state startup failed: {error:#}");
+                    show_startup_failure_and_exit(app, "B.O.B. could not open its saved data. No automatic recovery was attempted.");
+                    return Ok(());
                 }
             };
-            work::normalize_store(&store)
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
+            if let Err(error) = work::normalize_store(&store) {
+                eprintln!("B.O.B. startup state validation failed: {error:#}");
+                show_startup_failure_and_exit(app, "B.O.B. could not validate its saved work. No automatic recovery was attempted.");
+                return Ok(());
+            }
             let gemini = gemini::GeminiCredentials::new()
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
             app.manage(store);
@@ -95,6 +100,41 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running B.O.B.");
+}
+
+// Fail closed before the frontend can render sample fixtures without a valid
+// canonical Store. Details remain in diagnostic stderr, not in the GUI alert.
+fn show_startup_failure_and_exit(app: &mut tauri::App, message: &'static str) {
+    for window in app.webview_windows().values() {
+        let _ = window.hide();
+    }
+    let handle = app.handle().clone();
+    std::thread::spawn(move || {
+        report_startup_failure(message);
+        handle.exit(1);
+    });
+}
+
+#[cfg(windows)]
+fn report_startup_failure(message: &str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+    let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let title = wide("B.O.B. cannot start");
+    let body = wide(message);
+    // SAFETY: both buffers are NUL-terminated UTF-16 and live through the call.
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            body.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn report_startup_failure(message: &str) {
+    eprintln!("{message}");
 }
 
 fn focus_main_window(app: &tauri::AppHandle) {
