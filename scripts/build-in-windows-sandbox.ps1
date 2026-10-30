@@ -33,8 +33,20 @@ try {
     $vs = Fetch 'https://aka.ms/vs/17/release/vs_BuildTools.exe' 'vs_BuildTools.exe'
     $sig = Get-AuthenticodeSignature -LiteralPath $vs
     if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw "vs_BuildTools.exe signature is $($sig.Status) by $($sig.SignerCertificate.Subject)" }
-    Note "installing MSVC Build Tools (signed by $($sig.SignerCertificate.Subject))"
-    $p = Start-Process -FilePath $vs -ArgumentList '--quiet', '--wait', '--norestart', '--nocache', '--add', 'Microsoft.VisualStudio.Workload.VCTools', '--includeRecommended' -Wait -PassThru
+    $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    Note "installing MSVC Build Tools (signed by $($sig.SignerCertificate.Subject)); elevated=$admin"
+    $p = Start-Process -FilePath $vs -ArgumentList '--quiet', '--wait', '--norestart', '--nocache', '--add', 'Microsoft.VisualStudio.Workload.VCTools', '--includeRecommended' -PassThru
+    # Heartbeat and installer logs, so a stalled install is visible from the host.
+    $vsRoot = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio'
+    $deadline = (Get-Date).AddMinutes(60)
+    while (-not $p.WaitForExit(60000)) {
+        $mb = [int]((Get-ChildItem $vsRoot -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1MB)
+        $procs = (Get-Process | Where-Object { $_.Name -match '^(vs_|setup$|vs_installer)' } | ForEach-Object Name | Sort-Object -Unique) -join ','
+        Note "Build Tools: $mb MB under $vsRoot; installer processes: $procs"
+        Get-ChildItem $env:TEMP -Filter 'dd_*.log' -ErrorAction SilentlyContinue | Copy-Item -Destination $Out -Force
+        if ((Get-Date) -gt $deadline) { throw 'Build Tools install exceeded 60 minutes' }
+    }
+    Get-ChildItem $env:TEMP -Filter 'dd_*.log' -ErrorAction SilentlyContinue | Copy-Item -Destination $Out -Force
     if ($p.ExitCode -notin 0, 3010) { throw "Build Tools installer exited $($p.ExitCode)" }
 
     $rustup = Fetch 'https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe' 'rustup-init.exe'
