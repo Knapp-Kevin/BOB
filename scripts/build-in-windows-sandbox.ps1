@@ -97,7 +97,9 @@ try {
     Run "`"$rustup`" -y --profile minimal --default-toolchain $RustToolchain --no-modify-path"
     $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
 
-    $node = (Invoke-RestMethod 'https://nodejs.org/dist/index.json' | Where-Object { $_.version -like "$NodeMajor.*" } | Select-Object -First 1).version
+    # PowerShell 5.1 emits a JSON array as one pipeline object; enumerate it first.
+    $index = Invoke-RestMethod 'https://nodejs.org/dist/index.json'
+    $node = ($index | ForEach-Object { $_ } | Where-Object { $_.version -like "$NodeMajor.*" } | Select-Object -First 1).version
     $zipName = "node-$node-win-x64.zip"
     $zip = Fetch "https://nodejs.org/dist/$node/$zipName" $zipName
     $sums = (Invoke-WebRequest -UseBasicParsing "https://nodejs.org/dist/$node/SHASUMS256.txt").Content
