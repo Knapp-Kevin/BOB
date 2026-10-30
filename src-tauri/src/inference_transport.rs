@@ -34,6 +34,8 @@ struct Request<'a> {
 #[derive(Serialize)]
 struct ProviderRouting {
     data_collection: &'static str,
+    // Fail rather than retrying a different upstream provider after failure.
+    allow_fallbacks: bool,
 }
 
 #[derive(Serialize)]
@@ -127,6 +129,7 @@ impl InferenceTransport {
                 self.openrouter_endpoint.as_str(),
                 Some(ProviderRouting {
                     data_collection: "deny",
+                    allow_fallbacks: false,
                 }),
             ),
             InferenceProvider::LmStudio => (&self.local, self.lm_studio_endpoint.as_str(), None),
@@ -193,8 +196,15 @@ fn parse_response(bytes: &[u8]) -> Result<String> {
         .into_iter()
         .next()
         .ok_or_else(|| anyhow::anyhow!("inference response is empty"))?;
-    if choice.finish_reason.as_deref() == Some("error") {
-        bail!("inference provider reported an error");
+    // A partial or filtered answer must not be presented as a complete,
+    // authoritative Chat response. Unknown/missing termination status is
+    // likewise not evidence that generation completed successfully.
+    match choice.finish_reason.as_deref() {
+        Some("stop") => {}
+        Some("length") => bail!("inference response was truncated"),
+        Some("content_filter") => bail!("inference response was filtered"),
+        Some("error") => bail!("inference provider reported an error"),
+        _ => bail!("inference completion status is unverified"),
     }
     let output = choice.message.content.unwrap_or_default();
     validate_generated_text(&output)?;
@@ -207,6 +217,11 @@ fn validate_generated_text(output: &str) -> Result<()> {
     }
     if output.len() > MAX_GENERATION_BYTES {
         bail!("inference response exceeds chat persistence limit");
+    }
+    // Reject embedded controls that cannot be safely displayed as Chat prose.
+    // Keep ordinary line breaks and tabs for readable generated answers.
+    if output.chars().any(|ch| ch.is_control() && ch != '\n' && ch != '\r' && ch != '\t') {
+        bail!("inference response contains unsupported control characters");
     }
     Ok(())
 }
@@ -328,6 +343,9 @@ mod tests {
         assert!(validate_generated_text("   ").is_err());
         assert!(validate_generated_text(&"🧠".repeat(2_001)).is_err());
         assert!(validate_generated_text(&"x".repeat(8_000)).is_ok());
+        assert!(validate_generated_text("line one\nline two\tindented").is_ok());
+        assert!(validate_generated_text("unsafe\u{0000}control").is_err());
+        assert!(validate_generated_text("unsafe\u{001b}escape").is_err());
     }
 
     #[test]
@@ -376,6 +394,7 @@ mod tests {
         assert_eq!(body["stream"], false);
         assert_eq!(body["max_tokens"], MAX_OUTPUT_TOKENS);
         assert_eq!(body["provider"]["data_collection"], "deny");
+        assert_eq!(body["provider"]["allow_fallbacks"], false);
         assert!(body.get("models").is_none(), "no alternate model fallback");
         assert!(body.get("route").is_none());
         assert_eq!(body["messages"][0]["content"], "Help me start");
@@ -417,6 +436,53 @@ mod tests {
             let message = format!("{error:#} {error:?}");
             assert!(!message.contains(KEY), "credential leaked: {message}");
             assert!(!message.contains("sk-or"), "credential leaked: {message}");
+        }
+    }
+
+    #[test]
+    fn rejects_truncated_filtered_and_unknown_finish_states() {
+        let cases = [
+            ("length", "truncated"),
+            ("content_filter", "filtered"),
+            ("unexpected", "unverified"),
+        ];
+        for (finish, expected) in cases {
+            let body = serde_json::json!({
+                "choices": [{
+                    "message": { "content": "A plausible but incomplete reply" },
+                    "finish_reason": finish
+                }]
+            });
+            let error = parse_response(body.to_string().as_bytes()).unwrap_err();
+            assert!(error.to_string().contains(expected));
+        }
+        let absent = serde_json::json!({
+            "choices": [{ "message": { "content": "Unknown completion status" } }]
+        });
+        assert!(parse_response(absent.to_string().as_bytes()).is_err());
+        assert_eq!(
+            parse_response(completion("Complete answer").as_bytes()).unwrap(),
+            "Complete answer"
+        );
+    }
+
+    #[test]
+    fn incomplete_http_completions_fail_after_authorized_transport() {
+        for finish in ["length", "content_filter", "tool_calls"] {
+            let body = serde_json::json!({
+                "choices": [{
+                    "message": { "content": "Potentially misleading partial answer" },
+                    "finish_reason": finish
+                }]
+            });
+            let server = serve(200, body.to_string());
+            let transport = InferenceTransport::for_test(server.endpoint.clone()).unwrap();
+            let error = run(&transport, &authorized(), MODEL, "test", Some(KEY)).unwrap_err();
+            assert!(
+                !error.to_string().contains(KEY),
+                "secret leaked for completion status {finish}"
+            );
+            assert_eq!(server.requests.lock().unwrap().len(), 1);
         }
     }
 
