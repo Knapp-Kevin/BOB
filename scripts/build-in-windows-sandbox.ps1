@@ -38,7 +38,8 @@ try {
     if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw "winsdksetup.exe signature is $($sig.Status) by $($sig.SignerCertificate.Subject)" }
     Note "installing Windows SDK $((Get-Item $sdk).VersionInfo.ProductVersion) (DesktopCPPx64 only)"
     $p = Start-Process -FilePath $sdk -ArgumentList '/features', 'OptionId.DesktopCPPx64', '/quiet', '/norestart', '/ceip', 'off', '/log', (Join-Path $Out 'winsdk.log') -PassThru
-    if (-not $p.WaitForExit(30 * 60 * 1000)) { throw 'Windows SDK install exceeded 30 minutes; see winsdk.log' }
+    # Each SDK MSI package takes a fixed ~2 minutes inside Windows Sandbox, and about 24 run.
+    if (-not $p.WaitForExit(90 * 60 * 1000)) { throw 'Windows SDK install exceeded 90 minutes; see winsdk.log' }
     if ($p.ExitCode -notin 0, 3010) { throw "Windows SDK installer exited $($p.ExitCode); see winsdk.log" }
     $kernel32 = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Lib" -Recurse -Filter kernel32.lib -ErrorAction SilentlyContinue | Where-Object FullName -match '\\x64\\' | Select-Object -First 1
     if (-not $kernel32) { throw 'Windows SDK installed without the x64 desktop libraries' }
@@ -52,13 +53,13 @@ try {
     $p = Start-Process -FilePath $vs -ArgumentList '--quiet', '--wait', '--norestart', '--nocache', '--add', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64' -PassThru
     # Heartbeat and installer logs, so a stalled install is visible from the host.
     $vsRoot = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio'
-    $deadline = (Get-Date).AddMinutes(60)
+    $deadline = (Get-Date).AddMinutes(90)
     while (-not $p.WaitForExit(60000)) {
         $mb = [int]((Get-ChildItem $vsRoot -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1MB)
         $procs = (Get-Process | Where-Object { $_.Name -match '^(vs_|setup$|vs_installer)' } | ForEach-Object Name | Sort-Object -Unique) -join ','
         Note "Build Tools: $mb MB under $vsRoot; installer processes: $procs"
         Get-ChildItem $env:TEMP -Filter 'dd_*.log' -ErrorAction SilentlyContinue | Copy-Item -Destination $Out -Force
-        if ((Get-Date) -gt $deadline) { throw 'Build Tools install exceeded 60 minutes' }
+        if ((Get-Date) -gt $deadline) { throw 'Build Tools install exceeded 90 minutes' }
     }
     Get-ChildItem $env:TEMP -Filter 'dd_*.log' -ErrorAction SilentlyContinue | Copy-Item -Destination $Out -Force
     if ($p.ExitCode -notin 0, 3010) { throw "Build Tools installer exited $($p.ExitCode)" }
