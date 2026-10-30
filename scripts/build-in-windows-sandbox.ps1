@@ -30,6 +30,16 @@ try {
     Note "build sandbox: $($os.Caption) $($os.Version) build $($os.BuildNumber); Smart App Control state=$sac"
     Note "source: $((Get-Content C:\kit\source.txt -Raw).Trim())"
 
+    # Inside Windows Sandbox, every MSI waited exactly 120 s in "SOFTWARE RESTRICTION POLICY:
+    # Verifying package" while the SYSTEM-run certificate chain engine waited on URL retrieval
+    # that never answered. Shorten that retrieval timeout in this disposable Sandbox only;
+    # signatures are still verified, and the host is untouched.
+    $chain = 'HKLM:\SOFTWARE\Policies\Microsoft\SystemCertificates\ChainEngine\Config'
+    New-Item -Force $chain | Out-Null
+    New-ItemProperty $chain -Name ChainUrlRetrievalTimeoutMilliseconds -PropertyType DWord -Value 3000 -Force | Out-Null
+    New-ItemProperty $chain -Name ChainRevAccumulativeUrlRetrievalTimeoutMilliseconds -PropertyType DWord -Value 6000 -Force | Out-Null
+    Note 'certificate chain URL retrieval timeout set to 3 s (Sandbox only)'
+
     # The Windows SDK installer launched by the Build Tools stalled indefinitely in Windows
     # Sandbox, so install the SDK first, standalone, with only the desktop x64 C++ feature.
     # 10.0.26100.9457 installer link from learn.microsoft.com/windows/apps/windows-sdk/downloads.
