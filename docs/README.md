@@ -39,6 +39,7 @@ flowchart TB
 | Understand why B.O.B. exists and what it owns | [`PRODUCT.md`](PRODUCT.md) |
 | Understand the single-agent architecture, state ownership, inference routing, trust boundaries, and data flow | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
 | Understand the current Today, Inbox, Chat, Settings, accessibility, and low-cognitive-load interaction contract | [`DESIGN.md`](DESIGN.md) |
+| See draft screenshots and the walkthrough video (owner review pending) | [`marketing/`](marketing/README.md) |
 | Understand portable B.O.B. capabilities and future first-party host adapters | [`adr/ADR-0006-portable-capabilities-and-host-adapters.md`](adr/ADR-0006-portable-capabilities-and-host-adapters.md) and Proposed [`rfc/RFC-0004-portable-capability-host-contract.md`](rfc/RFC-0004-portable-capability-host-contract.md) |
 | Understand implementation order and current acceptance gates | [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) |
 | Understand release sequencing | [`ROADMAP.md`](ROADMAP.md) |
