@@ -455,6 +455,26 @@ mod tests {
     }
 
     #[test]
+    fn incomplete_http_completions_fail_after_authorized_transport() {
+        for finish in ["length", "content_filter", "tool_calls"] {
+            let body = serde_json::json!({
+                "choices": [{
+                    "message": { "content": "Potentially misleading partial answer" },
+                    "finish_reason": finish
+                }]
+            });
+            let server = serve(200, body.to_string());
+            let transport = InferenceTransport::for_test(server.endpoint.clone()).unwrap();
+            let error = run(&transport, &authorized(), MODEL, "test", Some(KEY)).unwrap_err();
+            assert!(
+                !error.to_string().contains(KEY),
+                "secret leaked for completion status {finish}"
+            );
+            assert_eq!(server.requests.lock().unwrap().len(), 1);
+        }
+    }
+
+    #[test]
     fn unreachable_provider_error_does_not_leak_key() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
