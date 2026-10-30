@@ -30,49 +30,62 @@ try {
     Note "build sandbox: $($os.Caption) $($os.Version) build $($os.BuildNumber); Smart App Control state=$sac"
     Note "source: $((Get-Content C:\kit\source.txt -Raw).Trim())"
 
-    # Inside Windows Sandbox, every MSI waited exactly 120 s in "SOFTWARE RESTRICTION POLICY:
-    # Verifying package" while the SYSTEM-run certificate chain engine waited on URL retrieval
-    # that never answered. Shorten that retrieval timeout in this disposable Sandbox only;
-    # signatures are still verified, and the host is untouched.
-    $chain = 'HKLM:\SOFTWARE\Policies\Microsoft\SystemCertificates\ChainEngine\Config'
-    New-Item -Force $chain | Out-Null
-    New-ItemProperty $chain -Name ChainUrlRetrievalTimeoutMilliseconds -PropertyType DWord -Value 3000 -Force | Out-Null
-    New-ItemProperty $chain -Name ChainRevAccumulativeUrlRetrievalTimeoutMilliseconds -PropertyType DWord -Value 6000 -Force | Out-Null
-    Note 'certificate chain URL retrieval timeout set to 3 s (Sandbox only)'
+    if (Test-Path 'C:\toolchain\msvc\bin\Hostx64\x64\link.exe') {
+        # Every MSI waits a fixed ~120 s inside Windows Sandbox (Windows Installer's own
+        # software restriction policy check; plain WinVerifyTrust takes 1 s), which made the
+        # SDK and Build Tools installs take over an hour. When the host's MSVC and Windows SDK
+        # are mapped read-only, use them in place instead of installing anything.
+        $sdkRoot = 'C:\toolchain\winsdk'
+        $sdkVer = (Get-ChildItem "$sdkRoot\Lib" -Directory | Where-Object { Test-Path "$($_.FullName)\um\x64\kernel32.lib" } | Sort-Object Name | Select-Object -Last 1).Name
+        if (-not $sdkVer) { throw "no x64 Windows SDK libraries under $sdkRoot" }
+        $msvc = 'C:\toolchain\msvc'
+        $env:VCINSTALLDIR = 'C:\toolchain\'
+        $env:VCToolsInstallDir = "$msvc\"
+        $env:PATH = "$msvc\bin\Hostx64\x64;$sdkRoot\bin\$sdkVer\x64;$env:PATH"
+        $env:LIB = "$msvc\lib\x64;$sdkRoot\Lib\$sdkVer\um\x64;$sdkRoot\Lib\$sdkVer\ucrt\x64"
+        $env:INCLUDE = (@("$msvc\include") + ('ucrt', 'um', 'shared', 'winrt', 'cppwinrt' | ForEach-Object { "$sdkRoot\Include\$sdkVer\$_" })) -join ';'
+        # Resource compilers locate the SDK through this key; set it in the Sandbox only.
+        foreach ($key in 'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots') {
+            New-Item -Force $key | Out-Null
+            New-ItemProperty $key -Name KitsRoot10 -Value "$sdkRoot\" -Force | Out-Null
+        }
+        Note "using host toolchain mapped read-only: $((Get-Content C:\kit\toolchain.txt -Raw).Trim()); SDK libraries $sdkVer"
+        Run 'link.exe /? | findstr /C:"Version" & rc.exe /? | findstr /C:"Version"'
+    } else {
+        # The Windows SDK installer launched by the Build Tools stalled indefinitely in Windows
+        # Sandbox, so install the SDK first, standalone, with only the desktop x64 C++ feature.
+        # 10.0.26100.9457 installer link from learn.microsoft.com/windows/apps/windows-sdk/downloads.
+        $sdk = Fetch 'https://go.microsoft.com/fwlink/?linkid=2382321' 'winsdksetup.exe'
+        $sig = Get-AuthenticodeSignature -LiteralPath $sdk
+        if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw "winsdksetup.exe signature is $($sig.Status) by $($sig.SignerCertificate.Subject)" }
+        Note "installing Windows SDK $((Get-Item $sdk).VersionInfo.ProductVersion) (DesktopCPPx64 only)"
+        $p = Start-Process -FilePath $sdk -ArgumentList '/features', 'OptionId.DesktopCPPx64', '/quiet', '/norestart', '/ceip', 'off', '/log', (Join-Path $Out 'winsdk.log') -PassThru
+        # Each SDK MSI package takes a fixed ~2 minutes inside Windows Sandbox, and about 24 run.
+        if (-not $p.WaitForExit(90 * 60 * 1000)) { throw 'Windows SDK install exceeded 90 minutes; see winsdk.log' }
+        if ($p.ExitCode -notin 0, 3010) { throw "Windows SDK installer exited $($p.ExitCode); see winsdk.log" }
+        $kernel32 = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Lib" -Recurse -Filter kernel32.lib -ErrorAction SilentlyContinue | Where-Object FullName -match '\\x64\\' | Select-Object -First 1
+        if (-not $kernel32) { throw 'Windows SDK installed without the x64 desktop libraries' }
+        Note "Windows SDK ready: $($kernel32.FullName)"
 
-    # The Windows SDK installer launched by the Build Tools stalled indefinitely in Windows
-    # Sandbox, so install the SDK first, standalone, with only the desktop x64 C++ feature.
-    # 10.0.26100.9457 installer link from learn.microsoft.com/windows/apps/windows-sdk/downloads.
-    $sdk = Fetch 'https://go.microsoft.com/fwlink/?linkid=2382321' 'winsdksetup.exe'
-    $sig = Get-AuthenticodeSignature -LiteralPath $sdk
-    if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw "winsdksetup.exe signature is $($sig.Status) by $($sig.SignerCertificate.Subject)" }
-    Note "installing Windows SDK $((Get-Item $sdk).VersionInfo.ProductVersion) (DesktopCPPx64 only)"
-    $p = Start-Process -FilePath $sdk -ArgumentList '/features', 'OptionId.DesktopCPPx64', '/quiet', '/norestart', '/ceip', 'off', '/log', (Join-Path $Out 'winsdk.log') -PassThru
-    # Each SDK MSI package takes a fixed ~2 minutes inside Windows Sandbox, and about 24 run.
-    if (-not $p.WaitForExit(90 * 60 * 1000)) { throw 'Windows SDK install exceeded 90 minutes; see winsdk.log' }
-    if ($p.ExitCode -notin 0, 3010) { throw "Windows SDK installer exited $($p.ExitCode); see winsdk.log" }
-    $kernel32 = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Lib" -Recurse -Filter kernel32.lib -ErrorAction SilentlyContinue | Where-Object FullName -match '\\x64\\' | Select-Object -First 1
-    if (-not $kernel32) { throw 'Windows SDK installed without the x64 desktop libraries' }
-    Note "Windows SDK ready: $($kernel32.FullName)"
-
-    $vs = Fetch 'https://aka.ms/vs/17/release/vs_BuildTools.exe' 'vs_BuildTools.exe'
-    $sig = Get-AuthenticodeSignature -LiteralPath $vs
-    if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw "vs_BuildTools.exe signature is $($sig.Status) by $($sig.SignerCertificate.Subject)" }
-    $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    Note "installing MSVC Build Tools (signed by $($sig.SignerCertificate.Subject)); elevated=$admin"
-    $p = Start-Process -FilePath $vs -ArgumentList '--quiet', '--wait', '--norestart', '--nocache', '--add', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64' -PassThru
-    # Heartbeat and installer logs, so a stalled install is visible from the host.
-    $vsRoot = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio'
-    $deadline = (Get-Date).AddMinutes(90)
-    while (-not $p.WaitForExit(60000)) {
-        $mb = [int]((Get-ChildItem $vsRoot -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1MB)
-        $procs = (Get-Process | Where-Object { $_.Name -match '^(vs_|setup$|vs_installer)' } | ForEach-Object Name | Sort-Object -Unique) -join ','
-        Note "Build Tools: $mb MB under $vsRoot; installer processes: $procs"
+        $vs = Fetch 'https://aka.ms/vs/17/release/vs_BuildTools.exe' 'vs_BuildTools.exe'
+        $sig = Get-AuthenticodeSignature -LiteralPath $vs
+        if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw "vs_BuildTools.exe signature is $($sig.Status) by $($sig.SignerCertificate.Subject)" }
+        $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        Note "installing MSVC Build Tools (signed by $($sig.SignerCertificate.Subject)); elevated=$admin"
+        $p = Start-Process -FilePath $vs -ArgumentList '--quiet', '--wait', '--norestart', '--nocache', '--add', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64' -PassThru
+        # Heartbeat and installer logs, so a stalled install is visible from the host.
+        $vsRoot = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio'
+        $deadline = (Get-Date).AddMinutes(90)
+        while (-not $p.WaitForExit(60000)) {
+            $mb = [int]((Get-ChildItem $vsRoot -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1MB)
+            $procs = (Get-Process | Where-Object { $_.Name -match '^(vs_|setup$|vs_installer)' } | ForEach-Object Name | Sort-Object -Unique) -join ','
+            Note "Build Tools: $mb MB under $vsRoot; installer processes: $procs"
+            Get-ChildItem $env:TEMP -Filter 'dd_*.log' -ErrorAction SilentlyContinue | Copy-Item -Destination $Out -Force
+            if ((Get-Date) -gt $deadline) { throw 'Build Tools install exceeded 90 minutes' }
+        }
         Get-ChildItem $env:TEMP -Filter 'dd_*.log' -ErrorAction SilentlyContinue | Copy-Item -Destination $Out -Force
-        if ((Get-Date) -gt $deadline) { throw 'Build Tools install exceeded 90 minutes' }
+        if ($p.ExitCode -notin 0, 3010) { throw "Build Tools installer exited $($p.ExitCode)" }
     }
-    Get-ChildItem $env:TEMP -Filter 'dd_*.log' -ErrorAction SilentlyContinue | Copy-Item -Destination $Out -Force
-    if ($p.ExitCode -notin 0, 3010) { throw "Build Tools installer exited $($p.ExitCode)" }
 
     $rustup = Fetch 'https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe' 'rustup-init.exe'
     $expected = ((Invoke-WebRequest -UseBasicParsing 'https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe.sha256').Content -split '\s+')[0]
