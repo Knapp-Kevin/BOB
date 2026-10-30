@@ -18,17 +18,51 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Registered first: a second launch hands off to the running window and exits
+        // before setup opens the canonical profile (see state::ProfileLock).
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            focus_main_window(app);
+        }))
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
-            let store = state::Store::open(&data_dir)
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            work::normalize_store(&store)
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
+            let store = match state::Store::open(&data_dir) {
+                Ok(store) => store,
+                Err(error) => {
+                    // A GUI launch has no console, so a busy profile must be reported
+                    // visibly rather than as a setup panic on stderr.
+                    let error = match error.downcast::<state::ProfileInUse>() {
+                        Ok(busy) => {
+                            let handle = app.handle().clone();
+                            std::thread::spawn(move || {
+                                report_profile_in_use(&busy);
+                                exit_failed_startup(&handle);
+                            });
+                            return Ok(());
+                        }
+                        Err(error) => error,
+                    };
+                    eprintln!("B.O.B. canonical state startup failed: {error:#}");
+                    show_startup_failure_and_exit(app, "B.O.B. could not open its saved data. No automatic recovery was attempted.");
+                    return Ok(());
+                }
+            };
+            if let Err(error) = work::normalize_store(&store) {
+                eprintln!("B.O.B. startup state validation failed: {error:#}");
+                show_startup_failure_and_exit(app, "B.O.B. could not validate its saved work. No automatic recovery was attempted.");
+                return Ok(());
+            }
             let gemini = gemini::GeminiCredentials::new()
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
             app.manage(store);
             app.manage(gemini);
             app.manage(openrouter::OpenRouterCredentials::new());
+            // The main window is not created at startup (tauri.conf.json). Building it
+            // only once the canonical Store is open and valid means a failed or losing
+            // launch never starts a webview that could show sample fixtures or contend
+            // with the instance that owns the profile.
+            for window_config in &app.config().app.windows {
+                tauri::WebviewWindowBuilder::from_config(app.handle(), window_config)?.build()?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -68,4 +102,80 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running B.O.B.");
+}
+
+// AppHandle::exit drops its code (the event loop ends with a plain Exit), so a
+// fail-closed startup exits directly with a non-zero status after Tauri cleanup.
+fn exit_failed_startup(handle: &tauri::AppHandle) -> ! {
+    handle.cleanup_before_exit();
+    std::process::exit(1);
+}
+
+// Fail closed before any window exists, so the frontend never renders sample
+// fixtures without a valid canonical Store. Details stay in diagnostic stderr.
+fn show_startup_failure_and_exit(app: &mut tauri::App, message: &'static str) {
+    let handle = app.handle().clone();
+    std::thread::spawn(move || {
+        report_startup_failure(message);
+        exit_failed_startup(&handle);
+    });
+}
+
+#[cfg(windows)]
+fn report_startup_failure(message: &str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+    let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let title = wide("B.O.B. cannot start");
+    let body = wide(message);
+    // SAFETY: both buffers are NUL-terminated UTF-16 and live through the call.
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            body.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn report_startup_failure(message: &str) {
+    eprintln!("{message}");
+}
+
+fn focus_main_window(app: &tauri::AppHandle) {
+    // A failed startup never creates the main window, so a handoff to it is a no-op.
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+#[cfg(windows)]
+fn report_profile_in_use(busy: &state::ProfileInUse) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONWARNING, MB_OK};
+    let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let title = wide("B.O.B. is already open");
+    let body = wide(&format!(
+        "B.O.B. could not start because its data is in use by another program.
+
+{busy}
+
+Nothing was changed."
+    ));
+    // SAFETY: both buffers are NUL-terminated UTF-16 and outlive the call.
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            body.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONWARNING,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn report_profile_in_use(busy: &state::ProfileInUse) {
+    eprintln!("{busy}");
 }

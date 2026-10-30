@@ -21,7 +21,13 @@ rusqlite = { version = "0.40", features = ["backup", "bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "~2.4"
 zeroize = "1.9"
+
+# Already in the lock file via tokio/dirs-sys; used only to show a native
+# warning when the profile is in use, because a GUI launch has no console.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
 
 [dev-dependencies]
 tempfile = "3"
