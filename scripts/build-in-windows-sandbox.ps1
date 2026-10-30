@@ -50,7 +50,9 @@ try {
             New-ItemProperty $key -Name KitsRoot10 -Value "$sdkRoot\" -Force | Out-Null
         }
         Note "using host toolchain mapped read-only: $((Get-Content C:\kit\toolchain.txt -Raw).Trim()); SDK libraries $sdkVer"
-        Run 'link.exe /? | findstr /C:"Version" & rc.exe /? | findstr /C:"Version"'
+        $banner = (& link.exe /? 2>&1 | Select-Object -First 1 | Out-String).Trim()
+        if ($banner -notmatch 'Linker Version') { throw "link.exe from the mapped toolchain did not run: $banner" }
+        Note $banner
     } else {
         # The Windows SDK installer launched by the Build Tools stalled indefinitely in Windows
         # Sandbox, so install the SDK first, standalone, with only the desktop x64 C++ feature.
@@ -88,7 +90,9 @@ try {
     }
 
     $rustup = Fetch 'https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe' 'rustup-init.exe'
-    $expected = ((Invoke-WebRequest -UseBasicParsing 'https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe.sha256').Content -split '\s+')[0]
+    # PowerShell 5.1 returns this octet-stream body as bytes, so read it from a file.
+    $sumFile = Fetch 'https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe.sha256' 'rustup-init.exe.sha256'
+    $expected = ((Get-Content -LiteralPath $sumFile -Raw).Trim() -split '\s+')[0]
     if ((Get-FileHash -LiteralPath $rustup).Hash -ne $expected.ToUpperInvariant()) { throw 'rustup-init.exe checksum mismatch' }
     Run "`"$rustup`" -y --profile minimal --default-toolchain $RustToolchain --no-modify-path"
     $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
