@@ -111,6 +111,9 @@ export function openRouterFailureMessage(error: unknown): string {
   if (/HTTP 401|HTTP 403/.test(detail)) return "OpenRouter rejected the saved API key.";
   if (/HTTP 402/.test(detail)) return "OpenRouter reports insufficient credits.";
   if (/HTTP 429/.test(detail)) return "OpenRouter is rate limiting requests.";
+  if (/inference response was truncated/.test(detail)) return "OpenRouter stopped before finishing its answer. The partial response was discarded.";
+  if (/inference response was filtered/.test(detail)) return "OpenRouter filtered the answer. No incomplete response was displayed.";
+  if (/inference completion status is unverified/.test(detail)) return "OpenRouter did not confirm that the answer finished. The response was discarded.";
   if (/not enabled|model changed|authorization denied|credential not configured|not been authorized/.test(detail)) {
     return "OpenRouter Chat is no longer authorized. Re-enable it in Settings.";
   }
