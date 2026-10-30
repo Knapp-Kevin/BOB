@@ -94,7 +94,7 @@ B.O.B. is public, MIT licensed, and an active **Alpha Product**. It is no longer
 The calm primary-workflow frontier is complete. Provider-independence research for the current runtime contract and local-runtime direction is also resolved enough to build under accepted authority. The immediate **alpha qualification** frontier is now narrower:
 
 1. native Windows 11 x64 startup-recovery acceptance under #85 / draft PR #103;
-2. native Windows 11 x64 NSIS install/relaunch/uninstall acceptance under #84 / draft PR #115;
+2. native Windows 11 x64 NSIS install/relaunch/uninstall acceptance under #84 / draft PR #115 (the beta-candidate package passed installed-app qualification in a disposable Windows Sandbox; evidence on PR #132, disposition pending);
 3. a fresh alpha convergence audit under Wayfinder #30;
 4. only then promotion of one already-authorized inference path with native evidence.
 
