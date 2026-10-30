@@ -34,6 +34,8 @@ struct Request<'a> {
 #[derive(Serialize)]
 struct ProviderRouting {
     data_collection: &'static str,
+    // Fail rather than retrying a different upstream provider after failure.
+    allow_fallbacks: bool,
 }
 
 #[derive(Serialize)]
@@ -127,6 +129,7 @@ impl InferenceTransport {
                 self.openrouter_endpoint.as_str(),
                 Some(ProviderRouting {
                     data_collection: "deny",
+                    allow_fallbacks: false,
                 }),
             ),
             InferenceProvider::LmStudio => (&self.local, self.lm_studio_endpoint.as_str(), None),
@@ -383,6 +386,7 @@ mod tests {
         assert_eq!(body["stream"], false);
         assert_eq!(body["max_tokens"], MAX_OUTPUT_TOKENS);
         assert_eq!(body["provider"]["data_collection"], "deny");
+        assert_eq!(body["provider"]["allow_fallbacks"], false);
         assert!(body.get("models").is_none(), "no alternate model fallback");
         assert!(body.get("route").is_none());
         assert_eq!(body["messages"][0]["content"], "Help me start");
