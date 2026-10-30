@@ -218,6 +218,11 @@ fn validate_generated_text(output: &str) -> Result<()> {
     if output.len() > MAX_GENERATION_BYTES {
         bail!("inference response exceeds chat persistence limit");
     }
+    // Reject embedded controls that cannot be safely displayed as Chat prose.
+    // Keep ordinary line breaks and tabs for readable generated answers.
+    if output.chars().any(|ch| ch.is_control() && ch != '\\n' && ch != '\\r' && ch != '\\t') {
+        bail!("inference response contains unsupported control characters");
+    }
     Ok(())
 }
 
@@ -338,6 +343,9 @@ mod tests {
         assert!(validate_generated_text("   ").is_err());
         assert!(validate_generated_text(&"🧠".repeat(2_001)).is_err());
         assert!(validate_generated_text(&"x".repeat(8_000)).is_ok());
+        assert!(validate_generated_text("line one\\nline two\\tindented").is_ok());
+        assert!(validate_generated_text("unsafe\\u{0000}control").is_err());
+        assert!(validate_generated_text("unsafe\\u{001b}escape").is_err());
     }
 
     #[test]
