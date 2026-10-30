@@ -1,5 +1,5 @@
 # Runs INSIDE a disposable Windows Sandbox staged by new-windows-sandbox-build.ps1.
-# Installs the MSVC Build Tools, Rust and Node from their official sources (verifying
+# Installs the Windows SDK, MSVC Build Tools, Rust and Node from official sources (verifying
 # signatures or published checksums), builds the NSIS installer through
 # npm run package:windows, and writes the installer, hashes and logs to C:\out.
 $ErrorActionPreference = 'Stop'
@@ -30,12 +30,26 @@ try {
     Note "build sandbox: $($os.Caption) $($os.Version) build $($os.BuildNumber); Smart App Control state=$sac"
     Note "source: $((Get-Content C:\kit\source.txt -Raw).Trim())"
 
+    # The Windows SDK installer launched by the Build Tools stalled indefinitely in Windows
+    # Sandbox, so install the SDK first, standalone, with only the desktop x64 C++ feature.
+    # 10.0.26100.9457 installer link from learn.microsoft.com/windows/apps/windows-sdk/downloads.
+    $sdk = Fetch 'https://go.microsoft.com/fwlink/?linkid=2382321' 'winsdksetup.exe'
+    $sig = Get-AuthenticodeSignature -LiteralPath $sdk
+    if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw "winsdksetup.exe signature is $($sig.Status) by $($sig.SignerCertificate.Subject)" }
+    Note "installing Windows SDK $((Get-Item $sdk).VersionInfo.ProductVersion) (DesktopCPPx64 only)"
+    $p = Start-Process -FilePath $sdk -ArgumentList '/features', 'OptionId.DesktopCPPx64', '/quiet', '/norestart', '/ceip', 'off', '/log', (Join-Path $Out 'winsdk.log') -PassThru
+    if (-not $p.WaitForExit(30 * 60 * 1000)) { throw 'Windows SDK install exceeded 30 minutes; see winsdk.log' }
+    if ($p.ExitCode -notin 0, 3010) { throw "Windows SDK installer exited $($p.ExitCode); see winsdk.log" }
+    $kernel32 = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Lib" -Recurse -Filter kernel32.lib -ErrorAction SilentlyContinue | Where-Object FullName -match '\\x64\\' | Select-Object -First 1
+    if (-not $kernel32) { throw 'Windows SDK installed without the x64 desktop libraries' }
+    Note "Windows SDK ready: $($kernel32.FullName)"
+
     $vs = Fetch 'https://aka.ms/vs/17/release/vs_BuildTools.exe' 'vs_BuildTools.exe'
     $sig = Get-AuthenticodeSignature -LiteralPath $vs
     if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw "vs_BuildTools.exe signature is $($sig.Status) by $($sig.SignerCertificate.Subject)" }
     $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     Note "installing MSVC Build Tools (signed by $($sig.SignerCertificate.Subject)); elevated=$admin"
-    $p = Start-Process -FilePath $vs -ArgumentList '--quiet', '--wait', '--norestart', '--nocache', '--add', 'Microsoft.VisualStudio.Workload.VCTools', '--includeRecommended' -PassThru
+    $p = Start-Process -FilePath $vs -ArgumentList '--quiet', '--wait', '--norestart', '--nocache', '--add', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64' -PassThru
     # Heartbeat and installer logs, so a stalled install is visible from the host.
     $vsRoot = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio'
     $deadline = (Get-Date).AddMinutes(60)
