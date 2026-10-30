@@ -193,8 +193,15 @@ fn parse_response(bytes: &[u8]) -> Result<String> {
         .into_iter()
         .next()
         .ok_or_else(|| anyhow::anyhow!("inference response is empty"))?;
-    if choice.finish_reason.as_deref() == Some("error") {
-        bail!("inference provider reported an error");
+    // A partial or filtered answer must not be presented as a complete,
+    // authoritative Chat response. Unknown/missing termination status is
+    // likewise not evidence that generation completed successfully.
+    match choice.finish_reason.as_deref() {
+        Some("stop") => {}
+        Some("length") => bail!("inference response was truncated"),
+        Some("content_filter") => bail!("inference response was filtered"),
+        Some("error") => bail!("inference provider reported an error"),
+        _ => bail!("inference completion status is unverified"),
     }
     let output = choice.message.content.unwrap_or_default();
     validate_generated_text(&output)?;
@@ -418,6 +425,33 @@ mod tests {
             assert!(!message.contains(KEY), "credential leaked: {message}");
             assert!(!message.contains("sk-or"), "credential leaked: {message}");
         }
+    }
+
+    #[test]
+    fn rejects_truncated_filtered_and_unknown_finish_states() {
+        let cases = [
+            ("length", "truncated"),
+            ("content_filter", "filtered"),
+            ("unexpected", "unverified"),
+        ];
+        for (finish, expected) in cases {
+            let body = serde_json::json!({
+                "choices": [{
+                    "message": { "content": "A plausible but incomplete reply" },
+                    "finish_reason": finish
+                }]
+            });
+            let error = parse_response(body.to_string().as_bytes()).unwrap_err();
+            assert!(error.to_string().contains(expected));
+        }
+        let absent = serde_json::json!({
+            "choices": [{ "message": { "content": "Unknown completion status" } }]
+        });
+        assert!(parse_response(absent.to_string().as_bytes()).is_err());
+        assert_eq!(
+            parse_response(completion("Complete answer").as_bytes()).unwrap(),
+            "Complete answer"
+        );
     }
 
     #[test]
