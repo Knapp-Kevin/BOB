@@ -4,8 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fs, path::Path, sync::Mutex, time::Duration};
 use tauri::State;
 
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 const DATABASE_NAME: &str = "bob.sqlite3";
+const PROFILE_LOCK_NAME: &str = "bob.profile.lock";
+#[cfg(windows)]
+const ERROR_SHARING_VIOLATION: i32 = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +54,64 @@ pub struct ChatEntry {
 
 pub struct Store {
     connection: Mutex<Connection>,
+    // Declared after the connection so the connection closes before the claim is released.
+    _profile_lock: ProfileLock,
+}
+
+/// Another process holds the profile lock. Startup reports this to the user
+/// instead of failing silently (see `lib.rs`).
+#[derive(Debug)]
+pub struct ProfileInUse {
+    pub profile: String,
+}
+
+impl std::fmt::Display for ProfileInUse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "another B.O.B. instance is already using the profile at {}; close it before starting B.O.B. again",
+            self.profile
+        )
+    }
+}
+
+impl std::error::Error for ProfileInUse {}
+
+/// Exclusive claim on one app-data profile for the lifetime of a `Store`.
+///
+/// Canonical saves replace the whole work state, so two processes writing the same
+/// profile silently drop each other's changes. On Windows the claim is an unshared
+/// handle on a lock file; the OS releases it when the process exits, including after a
+/// crash, so there is no stale lock to clean up. Other platforms rely on the
+/// single-instance plugin registered in `lib.rs`.
+struct ProfileLock {
+    _file: fs::File,
+}
+
+impl ProfileLock {
+    fn acquire(app_data_dir: &Path) -> Result<Self> {
+        let path = app_data_dir.join(PROFILE_LOCK_NAME);
+        let mut options = fs::OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.share_mode(0);
+        }
+
+        match options.open(&path) {
+            Ok(file) => Ok(Self { _file: file }),
+            #[cfg(windows)]
+            Err(error) if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION) => {
+                Err(ProfileInUse {
+                    profile: app_data_dir.display().to_string(),
+                }
+                .into())
+            }
+            Err(error) => Err(error)
+                .with_context(|| format!("claim B.O.B. profile lock at {}", path.display())),
+        }
+    }
 }
 
 impl Store {
@@ -61,6 +122,7 @@ impl Store {
                 app_data_dir.display()
             )
         })?;
+        let profile_lock = ProfileLock::acquire(app_data_dir)?;
 
         let db_path = app_data_dir.join(DATABASE_NAME);
         let existed_before_open = db_path.exists();
@@ -78,6 +140,7 @@ impl Store {
 
         Ok(Self {
             connection: Mutex::new(connection),
+            _profile_lock: profile_lock,
         })
     }
 
@@ -158,6 +221,42 @@ impl Store {
         transaction
             .commit()
             .context("commit canonical work-state transaction")?;
+        Ok(())
+    }
+
+    pub fn openrouter_settings(&self) -> Result<(Option<String>, bool, bool)> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        connection.query_row(
+            "SELECT model_id, cloud_enabled, metered_enabled FROM openrouter_settings WHERE singleton = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get::<_, i64>(1)? != 0, row.get::<_, i64>(2)? != 0)),
+        ).context("read OpenRouter authorization")
+    }
+
+    pub fn set_openrouter_settings(
+        &self,
+        model: Option<&str>,
+        cloud: bool,
+        metered: bool,
+    ) -> Result<()> {
+        if let Some(model) = model {
+            crate::inference_policy::validate_openrouter_model_id(model)
+                .map_err(|reason| anyhow!("invalid OpenRouter model identifier: {reason:?}"))?;
+        }
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let affected = connection.execute(
+            "UPDATE openrouter_settings SET model_id = ?1, cloud_enabled = ?2, metered_enabled = ?3 WHERE singleton = 1",
+            params![model, i64::from(cloud), i64::from(metered)],
+        )?;
+        if affected != 1 {
+            bail!("OpenRouter settings record missing; refusing silent authorization update");
+        }
         Ok(())
     }
 
@@ -575,6 +674,19 @@ fn run_migrations(
                 PRAGMA user_version = 4;",
                 )
                 .context("apply schema migration 4")?,
+            4 => transaction
+                .execute_batch(
+                    "CREATE TABLE openrouter_settings (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                    model_id TEXT,
+                    cloud_enabled INTEGER NOT NULL DEFAULT 0 CHECK(cloud_enabled IN (0, 1)),
+                    metered_enabled INTEGER NOT NULL DEFAULT 0 CHECK(metered_enabled IN (0, 1))
+                );
+                INSERT INTO openrouter_settings(singleton, model_id, cloud_enabled, metered_enabled)
+                VALUES (1, NULL, 0, 0);
+                PRAGMA user_version = 5;",
+                )
+                .context("apply schema migration 5")?,
             other => bail!("no migration path exists from schema version {other}"),
         }
 
@@ -698,6 +810,33 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn second_store_on_same_profile_fails_closed_until_first_closes() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let first = Store::open(directory.path())?;
+        first.save(&sample_state())?;
+
+        let error = match Store::open(directory.path()) {
+            Ok(_) => panic!("a second store must not open a profile that is already in use"),
+            Err(error) => error,
+        };
+        assert!(
+            format!("{error:#}").contains("already using the profile"),
+            "unexpected error: {error:#}"
+        );
+        assert!(
+            error.downcast_ref::<ProfileInUse>().is_some(),
+            "startup must be able to recognise a busy profile: {error:#}"
+        );
+        assert_eq!(first.load()?, sample_state());
+
+        drop(first);
+        let reopened = Store::open(directory.path())?;
+        assert_eq!(reopened.load()?, sample_state());
+        Ok(())
+    }
+
     #[test]
     fn chat_survives_store_reopen_and_rejects_invalid_entries() -> Result<()> {
         let directory = tempfile::tempdir()?;
@@ -746,6 +885,42 @@ mod tests {
     }
 
     #[test]
+    fn missing_openrouter_settings_row_rejects_authorization_update() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        {
+            let connection = store.connection.lock().unwrap();
+            connection.execute("DELETE FROM openrouter_settings WHERE singleton = 1", [])?;
+        }
+        assert!(store
+            .set_openrouter_settings(Some("vendor/model"), true, true)
+            .is_err());
+        assert!(store.openrouter_settings().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn openrouter_settings_are_deny_by_default_and_survive_reopen() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        assert_eq!(store.openrouter_settings()?, (None, false, false));
+        assert!(store
+            .set_openrouter_settings(Some("bad model"), true, true)
+            .is_err());
+        assert_eq!(store.openrouter_settings()?, (None, false, false));
+        store.set_openrouter_settings(Some("vendor/approved-model"), true, false)?;
+        drop(store);
+        let reopened = Store::open(directory.path())?;
+        assert_eq!(
+            reopened.openrouter_settings()?,
+            (Some("vendor/approved-model".into()), true, false)
+        );
+        reopened.set_openrouter_settings(None, false, false)?;
+        assert_eq!(reopened.openrouter_settings()?, (None, false, false));
+        Ok(())
+    }
+
+    #[test]
     fn clearing_chat_preserves_canonical_work_state() -> Result<()> {
         let directory = tempfile::tempdir()?;
         let store = Store::open(directory.path())?;
@@ -782,6 +957,55 @@ mod tests {
     }
 
     #[test]
+    fn v4_to_v5_migration_preserves_user_data_and_denies_openrouter() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let preferences = AccessibilityPreferences {
+            larger_text: true,
+            reduced_motion: true,
+        };
+        {
+            let store = Store::open(directory.path())?;
+            store.save(&sample_state())?;
+            store.save_accessibility_preferences(preferences)?;
+            store.append_chat(ChatEntry {
+                author: "user".into(),
+                text: "Keep this conversation".into(),
+            })?;
+        }
+
+        let db_path = directory.path().join(DATABASE_NAME);
+        let legacy = Connection::open(&db_path)?;
+        legacy.execute_batch("DROP TABLE openrouter_settings; PRAGMA user_version = 4;")?;
+        drop(legacy);
+
+        let upgraded = Store::open(directory.path())?;
+        assert_eq!(user_version(&upgraded.connection.lock().unwrap())?, 5);
+        assert_eq!(upgraded.load()?, sample_state());
+        assert_eq!(upgraded.load_accessibility_preferences()?, preferences);
+        let chat = upgraded.load_chat()?;
+        assert_eq!(chat.len(), 1);
+        assert_eq!(chat[0].text, "Keep this conversation");
+        assert_eq!(upgraded.openrouter_settings()?, (None, false, false));
+        assert!(directory
+            .path()
+            .join("recovery")
+            .join("bob-pre-migration-1.sqlite3")
+            .exists());
+        Ok(())
+    }
+
+    #[test]
+    fn openrouter_router_models_cannot_be_approved() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        for id in ["openrouter/auto", "no-vendor", "a/b/c"] {
+            assert!(store.set_openrouter_settings(Some(id), true, true).is_err());
+        }
+        assert_eq!(store.openrouter_settings()?, (None, false, false));
+        Ok(())
+    }
+
+    #[test]
     fn v3_to_v4_migration_preserves_existing_work_and_preferences() -> Result<()> {
         let directory = tempfile::tempdir()?;
         {
@@ -795,7 +1019,9 @@ mod tests {
 
         let db_path = directory.path().join(DATABASE_NAME);
         let legacy = Connection::open(&db_path)?;
-        legacy.execute_batch("DROP TABLE chat_entries; PRAGMA user_version = 3;")?;
+        legacy.execute_batch(
+            "DROP TABLE chat_entries; DROP TABLE openrouter_settings; PRAGMA user_version = 3;",
+        )?;
         drop(legacy);
 
         let upgraded = Store::open(directory.path())?;

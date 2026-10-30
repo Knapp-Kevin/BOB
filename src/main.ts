@@ -1,4 +1,5 @@
 import "./styles.css";
+import { refreshOpenRouter } from "./openrouter_ui";
 import { render } from "./controller";
 import { applyAccessibilityPreferences, applyPlanProjection, hydratePersistentWorkState, state } from "./model";
 import { loadAccessibilityPreferences, loadChatHistory, loadGeminiCredentialStatus, loadPersistentWorkState, planRemainingWork } from "./native";
@@ -23,6 +24,7 @@ async function bootstrap() {
     console.error("Failed to load canonical B.O.B. conversation", error);
   }
 
+  void refreshOpenRouter().finally(render);
   installAccessibilityPreferencePersistence();
   render();
 

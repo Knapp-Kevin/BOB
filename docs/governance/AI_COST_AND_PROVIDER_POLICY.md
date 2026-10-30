@@ -70,6 +70,17 @@ Backend changes that materially affect privacy, billing, or user intent must not
 
 Metered inference requires an explicit settings action. The UI must identify that the provider is metered. Later implementations may add budget ceilings, but absence of a budget feature does not weaken the default-disabled rule.
 
+## OpenRouter metered boundary
+
+OpenRouter is classified `metered` and `cloud`. It is disabled by default and requires, all at once:
+
+- one exact user-entered `vendor/model` ID (OpenRouter routers such as `openrouter/auto` are rejected because they choose a different model per request);
+- separate, persisted cloud-transmission and metered-billing permissions;
+- an API key held only in the operating-system credential store;
+- a Rust-held, in-memory Chat session grant that starts empty on every launch, is bound to the approved model, and is revoked by any model, permission, or credential change.
+
+Choosing an OpenRouter model does not fix the upstream host that serves it, nor that host's data policy. B.O.B. never sends alternate models, and every request sets `provider.data_collection = "deny"` so OpenRouter routes only to hosts that do not collect prompt data. Requests are bounded to 4,000 prompt bytes and 512 output tokens. A failed OpenRouter request falls back to B.O.B.'s deterministic local guidance, never to another provider.
+
 ## Provider verification
 
 Adapter documentation must identify the supported vendor surface being used and the basis for its billing classification. When vendor terms, quota, eligibility, privacy/data-use policy, or product behavior changes, the classification must be re-verified before documentation continues to claim free, subscription-backed, or otherwise included use.
