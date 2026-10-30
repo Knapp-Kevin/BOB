@@ -7,14 +7,14 @@ Status: **draft — owner review required before any public use.** Tracks issue 
 | Field | Value |
 | --- | --- |
 | Repository | `Knapp-Kevin/BOB` |
-| Captured from | `feature/inference-model-authorization-20261028` (draft PR #127, stacked on integration PR #126). That branch contains everything on `master` and the integration branch. |
-| Commits | `6ea9e2b` for the video and stills 01, 02, 03 and 06. `c68c86c` (the Chat panel fix, captured from an identical working tree just before it was committed) for stills 04 and 05. |
-| Product / build | B.O.B. `0.0.1`. Native Tauri 2 debug build run with `npx tauri dev` (Rust `dev` profile, Vite dev server, WebView2). Not a signed or NSIS-packaged build. |
-| OS | Windows 11 Pro 10.0.26300, 3440×1440 primary display |
-| Capture date | 2026-10-28 |
-| Viewport | Native window client area of exactly 1600×900. Captured with `ffmpeg` `gdigrab` from the desktop region while the window was pinned on top; every frame was reviewed to contain only B.O.B. |
-| Demo fixture | `fixture-128-a`: a fresh local profile with no API keys and four fictional items: "Draft agenda for Thursday's volunteer meetup", "Email the bike shop about the brake repair quote", "Idea: color-code the pantry shelves", "Return library books before Friday". All Chat text is B.O.B.'s local, rule-based output for these items. |
-| Inference | None. OpenRouter and Gemini were not configured, and no cloud request was made. |
+| Captured from | The beta candidate on `integration/beta-candidate-20261028` (PR #132). |
+| Build commit | `487f9fd`. Its product code (`src/`, `src-tauri/`) is identical to `a815ae1`, the last product change on that branch; later commits changed only scripts and docs. |
+| Product / build | B.O.B. `0.0.1`, release build installed from the NSIS package `B.O.B._0.0.1_x64-setup.exe` (SHA-256 `c0fd1b1d1657a78350b4411b47b8c0d7fcb05dc4226ebc2d5880c20ef02cafb0`, unsigned). Installed `bob.exe` SHA-256 `bc5f9d9fea85dff1b0dced95b88bdd68eaf85109432dc1cdf23a3a9f522392be`. Built with `npm run package:windows` (Rust 1.88.0, Node 22.23.4, MSVC 14.44, Windows SDK 10.0.26100) in a disposable Windows Sandbox (`scripts/new-windows-sandbox-build.ps1`). |
+| Capture environment | A separate disposable Windows Sandbox with networking, clipboard, printers, audio/video input and vGPU off: Windows 11 Enterprise 10.0.26100, WebView2 156.0.4314.50. The package was installed silently (`/S`) per user. The same package passed the installed-app qualification in `scripts/qualify-installed-windows.ps1` (PR #132). |
+| Capture date | 2026-10-30 (UTC) |
+| Viewport | Native window client area of exactly 1600×900. Captured inside the Sandbox with `ffmpeg` `gdigrab` from the client-area region only; every frame was reviewed to contain only B.O.B. Mouse and keyboard input was real input sent to the B.O.B. window inside the Sandbox. |
+| Demo fixture | `fixture-128-b`: a fresh profile on its own profile root, no API keys. Three fictional items were written to its SQLite file before the take: "Email the bike shop about the brake repair quote" (task, high), "Idea: color-code the pantry shelves" (idea), "Draft agenda for Thursday's volunteer meetup" (task, Thursday). "Return library books before Friday" was typed in during the take. All Chat text is B.O.B.'s local, rule-based output for these items. |
+| Inference | None. OpenRouter and Gemini were not configured, the Sandbox had no network, and no cloud request was possible. |
 | Data classification | Synthetic or fictional only. No personal data, credentials, private URLs or real schedules. |
 | Rights | Screenshots and video of the MIT-licensed B.O.B. interface, captured for the project owner; no third-party media, fonts beyond the app's own, or audio. |
 
@@ -22,18 +22,25 @@ Status: **draft — owner review required before any public use.** Tracks issue 
 
 | Path | SHA-256 | Bytes | Alt text | Caption |
 | --- | --- | --- | --- | --- |
-| `screenshots/01-today.png` | `b21956e80ed614095daa45fc8a7cb8f3f760761ef7e9bfdef7abd4f545e9a565` | 166768 | B.O.B. Today screen showing one next action, "Email the bike shop about the brake repair quote", with Do it now and Not now buttons, a quick-capture bar, a one-item remaining plan, and a resume card for a volunteer-meetup agenda. | Today keeps one next action in front, with the rest of the plan and a way back into unfinished work. |
-| `screenshots/02-inbox-classified.png` | `a20e9ef44aea9a57f1671e06231c2bc5173b09e6e2a3adfcf53537d59056dda1` | 137830 | B.O.B. Inbox listing three captured items labelled Task, Idea and Task, each with a Type selector, beside an Inbox snapshot card and an Organize with B.O.B. button. | Capture first and decide what it is later; the Inbox makes sorting optional. |
-| `screenshots/03-chat-preview-before-apply.png` | `0a8d0a57f26f6702ac10275405803efcb91970d3932d76e5fd3156f30bdf550f` | 166705 | B.O.B. Chat showing a "Preview before apply" card that proposes making one Inbox item the next action, with "Apply this change" and "Keep things as they are" buttons. | B.O.B. shows a proposed change before anything changes, and nothing happens until you accept it. |
-| `screenshots/04-chat-saved-handoff.png` | `f2182909b246baecb11f490ef0c084eb8e7fe54ac1424f0d4b759dde5d61ad3e` | 192968 | B.O.B. Chat with a short conversation and a Saved handoff card listing the objective, its In progress state and the next step; a Current context panel on the right offers Reduce this, Break it down, Reorient me, Help me decide and Save my place. | Save my place stores where you were and what comes next, so you can pick it back up later. |
-| `screenshots/05-today-overwhelmed-mode.png` | `9a0cad580e85f8e63e7a5c63cada18e38bb5d14d223fd122578cc504cdf56146` | 120197 | B.O.B. Today in Overwhelmed mode showing only the next action and quick capture, with a notice that reduced-information mode is on and a Show full view button. | Overwhelmed mode cuts the screen down to the next action and a place to capture. Compare with the Today overview. |
-| `screenshots/06-settings-inference.png` | `28b7c3cced2fd984e108abcc993f9afc5d9c00461a46e93626e59e1f3df38b28` | 146923 | B.O.B. Settings with an Inference section; the OpenRouter card shows no API key, an empty model field, and cloud-transmission and billed-inference permissions unchecked. | Optional inference providers are listed separately and stay off until you configure them. |
-| `video/bob-alpha-walkthrough.mp4` | `9da9fc83e4c0e8c6046071f25d3a45d0252956b68721f7cf8cb790c8118cbb05` | 1088430 | See `video/TRANSCRIPT.md`. | A 74-second walkthrough: capture, classify, preview and apply, start, break it down, save your place. |
-| `video/bob-alpha-walkthrough-poster.png` | `53763e745b9c57c7286ca086d7720dcff2627fc3c323c41d5b18bd8ece077d4e` | 286926 | Poster frame of the Today screen right after a previewed change was applied. | — |
+| `screenshots/01-today.png` | `052a7558e75cbac433f35aaaf0a55320f4df10396ec0a53f4878efef6f1ce0ec` | 168830 | B.O.B. Today screen showing one next action, "Email the bike shop about the brake repair quote", with Do it now and Not now buttons, a quick-capture bar, a one-item remaining plan, and a resume card for a volunteer-meetup agenda. | Today keeps one next action in front, with the rest of the plan and a way back into unfinished work. |
+| `screenshots/02-inbox-classified.png` | `67ced7a2f1f4a61851ca98c076730746646c6f80a802c3b7e8bba79047416f6f` | 144743 | B.O.B. Inbox listing four captured items labelled Reminder, Task, Idea and Task, each with a Type selector, beside an Inbox snapshot card and an Organize with B.O.B. button. | Capture first and decide what it is later; the Inbox makes sorting optional. |
+| `screenshots/03-chat-preview-before-apply.png` | `d2ef082fa3f6e3b089e8befb1ba5dae03250fd0d6e4fb60a342ba8f7e085588e` | 170643 | B.O.B. Chat showing a "Preview before apply" card that proposes making one Inbox item the next action, with "Apply this change" and "Keep things as they are" buttons. | B.O.B. shows a proposed change before anything changes, and nothing happens until you accept it. |
+| `screenshots/04-chat-saved-handoff.png` | `20fd726196d10ab7df7fac26538d2ccc336b7e87bdd0ee4b357c84cf88c31a6c` | 192941 | B.O.B. Chat with a short conversation and a Saved handoff card listing the objective, its In progress state and the next step; a Current context panel on the right offers Reduce this, Break it down, Reorient me, Help me decide and Save my place. | Save my place stores where you were and what comes next, so you can pick it back up later. |
+| `screenshots/05-today-overwhelmed-mode.png` | `f2059a3ed96bd23d4eef1a5fdd6e98c01c20c672f615af9351220264129171ec` | 118741 | B.O.B. Today in Overwhelmed mode showing only the next action, marked In progress, and quick capture, with a notice that reduced-information mode is on and a Show full view button. | Overwhelmed mode cuts the screen down to the next action and a place to capture. Compare with the Today overview. |
+| `screenshots/06-settings-inference.png` | `67965d09732154f14b63fcab8be5c80216200a3e85e15411d1ee1d9bd8a501cb` | 146522 | B.O.B. Settings with an Inference section; the OpenRouter card shows no API key, an empty model field, cloud-transmission and billed-inference permissions unchecked, and the per-session Use OpenRouter in Chat switch off. | Optional inference providers are listed separately and stay off until you configure them. |
+| `screenshots/07-settings-accessibility.png` | `cc44608d98be8973e329ad4f3c266a1a38e484d2a878c542889b300f9e83e1c1` | 161683 | Lower part of B.O.B. Settings: an unconnected Gemini API card, an Accessibility card with Larger interface text and Reduced motion checkboxes, and a Data ownership card with an Export my data button. | Readability settings and a full data export sit next to the optional providers. |
+| `video/bob-alpha-walkthrough.mp4` | `00f01e6207bb4d457ca2da44c71496c1e3bb8aea5ca695504099e9249b3a8e99` | 1454795 | See `video/TRANSCRIPT.md`. | A 60-second walkthrough: capture, classify, preview and apply, start, break it down, save your place, restart and resume. |
+| `video/bob-alpha-walkthrough-poster.png` | `522ea1a526887d7b953e770f94632e2a95036e93d546795856ef2af3fcc9aee1` | 383671 | Poster frame: B.O.B. Chat after a restart, still showing the conversation and the Saved handoff card. | — |
 | `video/bob-alpha-walkthrough.en.vtt` | see `git log` | — | English captions describing on-screen actions (the video is silent). | — |
 | `video/TRANSCRIPT.md` | see `git log` | — | Transcript and short text alternative. | — |
 
-Video details: H.264 High profile, 1600×900, 15 fps, 74.3 s, no audio track, `faststart` for web playback. It was edited from a continuous 83 s take with one cut (38–47 s, idle time on Today); nothing else was altered.
+Text files are listed without a checksum because Git may convert their line endings on checkout.
+
+Video details: H.264 High profile, yuv420p, 1600×900, 15 fps, 60.5 s, no audio track, `faststart` for web playback. It joins two continuous takes with one cut at 0:43.9, where B.O.B. was closed and reopened to show that the task and handoff survive a restart. Nothing else was edited.
+
+## Superseded media
+
+The 2026-10-28 set captured from a debug build (`npx tauri dev`) on commits `6ea9e2b` and `c68c86c` is replaced in full; it remains in Git history. The new set comes from the installed release package, shows the fixed-height Chat panel, and includes the Settings accessibility controls.
 
 ## Logo and wordmark
 
@@ -41,15 +48,15 @@ No new artwork was made. Use the approved assets in [`docs/assets/`](../assets/R
 
 ## Known limitations of this media
 
-- Debug build. The signed or packaged installer has not passed native release qualification (NSIS install, relaunch and uninstall; startup recovery).
-- The Settings screenshot and the OpenRouter controls come from unmerged draft PR #127.
+- The installer is unsigned and the product is an alpha. Do not offer a download link until signing and release are approved.
 - No AI inference appears; Chat output is B.O.B.'s deterministic local guidance.
-- The video predates the Chat panel height fix (`c68c86c`), so the panel grows as messages arrive.
+- The Sandbox desktop has no personalization, so the window frame and cursor use Windows defaults.
 - Accessibility, security and performance are not claimed by this media.
 
 ## Checks performed
 
-- Each PNG opened and was inspected at full size; `ffprobe` confirms 1600×900.
-- The MP4 decodes end to end (`ffmpeg -f null`). Frames around the edit were inspected. Contact sheets of the full raw take (one frame every 2 s) showed only B.O.B. content.
-- Caption timings were set from `ffmpeg` scene-change detection and match the on-screen action.
+- Each PNG was opened and inspected at full size; `ffprobe` confirms 1600×900.
+- The MP4 decodes end to end (`ffmpeg -f null`). Contact sheets of both raw takes (one frame every 2 s) showed only B.O.B. content.
+- Caption timings were set from `ffmpeg` scene-change detection, and a frame at each caption's midpoint was checked against its text.
+- SHA-256 values above were computed from the committed binary files.
 - Relative links in this file, `README.md` here, and the repository README resolve to files in the repository.
