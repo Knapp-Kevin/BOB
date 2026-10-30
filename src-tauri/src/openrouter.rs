@@ -87,8 +87,10 @@ impl OpenRouterCredentials {
 
     /// Enabling requires the full persisted authorization plus a stored credential.
     pub fn set_session(&self, store: &Store, enabled: bool) -> Result<bool> {
+        // Every enable attempt replaces any prior session authority. A denied
+        // re-authorization must never leave an older grant visibly active.
+        self.revoke_session();
         if !enabled {
-            self.revoke_session();
             return Ok(false);
         }
         let (authorization, model) = persisted_authorization(store)?;
@@ -403,6 +405,23 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_millis(100));
         assert!(server.requests.lock().unwrap().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn unsuccessful_session_reenable_clears_previous_grant() -> Result<()> {
+        let (_dir, store, credentials) = fixture()?;
+        credentials.configure(KEY.into())?;
+        store.set_openrouter_settings(Some(MODEL), true, true)?;
+        assert!(credentials.set_session(&store, true)?);
+        assert_eq!(credentials.session_model()?, Some(MODEL.to_owned()));
+
+        // Simulate a restored or externally revised policy without using the
+        // UI command (which separately revokes on normal settings changes).
+        store.set_openrouter_settings(Some(MODEL), false, true)?;
+        assert!(credentials.set_session(&store, true).is_err());
+        assert_eq!(credentials.session_model()?, None);
+        assert!(!settings_view(&store, &credentials)?.chat_session_enabled);
         Ok(())
     }
 
