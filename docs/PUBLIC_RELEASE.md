@@ -25,7 +25,7 @@ Before publishing the first supported release candidate:
 4. verify the private vulnerability-reporting path;
 5. ensure release artifacts contain no credentials, personal data, debug logs, or unintended local state;
 6. verify README status, screenshots, badges, and architecture match what actually ships;
-7. complete the one-time owner setup under [Signed Windows releases](#signed-windows-releases), so the installer is signed and verified.
+7. confirm the one-time signing setup under [Signed Windows releases](#signed-windows-releases) is still in place, so the installer is signed and verified.
 
 ## Signed Windows releases
 
@@ -63,9 +63,9 @@ The tag must equal the version in all of `package.json`, `package-lock.json`, `s
 
 Re-running a failed release counts against the shared Actions budget (Windows minutes bill at 2x): re-run at most once, then reproduce locally.
 
-### One-time owner setup (required before the first tag)
+### One-time owner setup
 
-Only the owner makes these changes. They need Azure rights on the `MythologIQ` tenant and admin rights on `Knapp-Kevin/BOB`. Run them in PowerShell with `az` and `gh` signed in.
+The owner approved and completed this setup on 2026-11-02: the `bob-release-environment` federated credential, the `release` environment (owner as required reviewer, `v*` tags only) and the three environment variables all exist. The commands below record what was done and rebuild it if needed. Only the owner makes these changes; they need Azure rights on the `MythologIQ` tenant and admin rights on `Knapp-Kevin/BOB`. Run them in PowerShell with `az` and `gh` signed in.
 
 1. **Federated credential.** Add one to the existing `github-sonic-rift-signing` app registration, which already holds the Artifact Signing Certificate Profile Signer role on `mythologiq-labs-public-release`. This repository's OIDC tokens use GitHub's immutable subject format (owner and repository IDs), so the subject is `repo:Knapp-Kevin@205245245/BOB@956289694:environment:release`, not the older `repo:Knapp-Kevin/BOB:environment:release`. Confirm the prefix first with `gh api repos/Knapp-Kevin/BOB/actions/oidc/customization/sub`.
 
@@ -83,8 +83,10 @@ Only the owner makes these changes. They need Azure rights on the `MythologIQ` t
 2. **`release` environment** with the owner as required reviewer, deployable only from `v*` tags:
 
    ```powershell
-   '{"prevent_self_review":false,"reviewers":[{"type":"User","id":205245245}],"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' |
-     gh api -X PUT repos/Knapp-Kevin/BOB/environments/release --input -
+   # A file, not a pipe: Windows PowerShell 5.1 mangles JSON piped to gh's stdin.
+   $file = Join-Path $env:TEMP 'bob-release-environment.json'
+   Set-Content -LiteralPath $file -Encoding ascii -Value '{"prevent_self_review":false,"reviewers":[{"type":"User","id":205245245}],"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}'
+   gh api -X PUT repos/Knapp-Kevin/BOB/environments/release --input $file
    gh api -X POST repos/Knapp-Kevin/BOB/environments/release/deployment-branch-policies -f name='v*' -f type=tag
    ```
 
