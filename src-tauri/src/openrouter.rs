@@ -598,7 +598,11 @@ mod tests {
         store.set_openrouter_settings(Some(MODEL), false, true)?;
         assert!(enable(&credentials, &store).is_err());
         assert_eq!(credentials.session_model()?, None);
-        assert!(!settings_view(&store, &credentials)?.chat_session_enabled);
+        assert!(
+            !settings_view(&store, &credentials)
+                .unwrap()
+                .chat_session_enabled
+        );
         Ok(())
     }
 

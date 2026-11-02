@@ -775,7 +775,9 @@ mod tests {
         });
         assert!(parse_response(absent.to_string().as_bytes()).is_err());
         assert_eq!(
-            parse_response(completion("Complete answer").as_bytes()).unwrap(),
+            parse_response(completion("Complete answer").as_bytes())
+                .unwrap()
+                .text,
             "Complete answer"
         );
     }
