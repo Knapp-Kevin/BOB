@@ -130,9 +130,11 @@ jobs:
           "unsigned target bob.exe $((Get-FileHash $target).Hash)" | Tee-Object -FilePath release-evidence/hashes.txt
           "installed bob.exe       $((Get-FileHash $installed).Hash)" | Tee-Object -FilePath release-evidence/hashes.txt -Append
 
-          # Tauri also signs the NSIS plugin DLLs it embeds in the installer.
-          $plugins = @(Get-ChildItem src-tauri/target/release/nsis/x64/Plugins/x86-unicode -Recurse -Filter *.dll | ForEach-Object FullName)
-          if ($plugins.Count -eq 0) { throw 'No NSIS plugin DLLs found to verify.' }
+          # Tauri signs the five NSIS plugins its installer uses. The plugin folder
+          # also holds stock NSIS plugins that are neither signed nor embedded.
+          $pluginDir = 'src-tauri/target/release/nsis/x64/Plugins/x86-unicode'
+          $plugins = @('NSISdl.dll', 'StartMenu.dll', 'System.dll', 'nsDialogs.dll', 'additional/nsis_tauri_utils.dll') |
+            ForEach-Object { (Resolve-Path (Join-Path $pluginDir $_)).Path }
 
           ./scripts/verify-windows-signature.ps1 -Path (@($installer.FullName, $installed, $uninstaller) + $plugins) *>&1 |
             Tee-Object -FilePath release-evidence/signature-verification.txt
