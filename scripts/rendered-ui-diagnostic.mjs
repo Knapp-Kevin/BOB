@@ -232,7 +232,30 @@ for (const viewport of viewports) {
   if (reducedAudit.horizontalOverflow || reducedAudit.clippedFocusables.length) failures.push(`${reducedLabel}: reduced-information layout overflow/clipping`);
 
   await click("#reduce");
+  // OpenRouter is optional cloud inference and must render fail-closed by default.
+  await click('[data-route="chat"]');
+  const chatStatus = await evaluate(`document.querySelector('#chat-inference-status')?.textContent ?? ""`);
+  if (!chatStatus.includes("Local B.O.B. guidance active")) failures.push(`${viewport.name}-chat: Chat does not start in deterministic mode`);
   await click('[data-route="settings"]');
+  const openRouter = await evaluate(`(() => {
+    const chat = document.querySelector("#openrouter-chat");
+    const key = document.querySelector("#openrouter-key");
+    return {
+      present: Boolean(document.querySelector("#openrouter-config")),
+      chatToggleDisabled: Boolean(chat?.disabled),
+      chatToggleChecked: Boolean(chat?.checked),
+      cloudChecked: Boolean(document.querySelector("#openrouter-cloud")?.checked),
+      meteredChecked: Boolean(document.querySelector("#openrouter-metered")?.checked),
+      keyIsPassword: key?.type === "password",
+      keyEmpty: key?.value === ""
+    };
+  })()`);
+  report.openRouter = report.openRouter ?? [];
+  report.openRouter.push({ viewport: viewport.name, ...openRouter });
+  if (!openRouter.present) failures.push(`${viewport.name}-settings: OpenRouter panel missing`);
+  if (!openRouter.chatToggleDisabled || openRouter.chatToggleChecked) failures.push(`${viewport.name}-settings: OpenRouter Chat is not disabled by default`);
+  if (openRouter.cloudChecked || openRouter.meteredChecked) failures.push(`${viewport.name}-settings: cloud/metered permission is not denied by default`);
+  if (!openRouter.keyIsPassword || !openRouter.keyEmpty) failures.push(`${viewport.name}-settings: OpenRouter key field is not a blank password input`);
   const focusResult = await exerciseKeyboardFocus();
   focusResult.label = `${viewport.name}-settings-keyboard`;
   report.keyboard.push(focusResult);

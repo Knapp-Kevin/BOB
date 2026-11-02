@@ -69,7 +69,7 @@
 .side .primary { margin-top: 6px; }
 .chat-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(250px, .65fr); gap: 18px; }
 .conversation { min-width: 0; }
-.messages { min-height: 420px; max-height: calc(100vh - 280px); overflow: auto; display: flex; flex-direction: column; gap: 13px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(180deg, #fbfdff 0%, #f7fafc 100%); }
+.messages { height: max(320px, calc(100vh - 300px)); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 13px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(180deg, #fbfdff 0%, #f7fafc 100%); }
 .message { display: flex; gap: 10px; align-items: flex-start; }
 .message.user { justify-content: flex-end; }
 .message img { width: 36px; height: 36px; }

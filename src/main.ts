@@ -1,7 +1,9 @@
 import "./styles.css";
+import { refreshOpenRouter } from "./openrouter_ui";
+import { refreshAdapters } from "./adapters_ui";
 import { render } from "./controller";
 import { applyAccessibilityPreferences, applyPlanProjection, hydratePersistentWorkState, state } from "./model";
-import { loadAccessibilityPreferences, loadGeminiCredentialStatus, loadPersistentWorkState, planRemainingWork } from "./native";
+import { loadAccessibilityPreferences, loadChatHistory, loadGeminiCredentialStatus, loadPersistentWorkState, planRemainingWork } from "./native";
 import { installAccessibilityPreferencePersistence } from "./preferences";
 
 async function bootstrap() {
@@ -16,6 +18,15 @@ async function bootstrap() {
     console.error("Failed to load durable B.O.B. local state", error);
   }
 
+  try {
+    const history = await loadChatHistory();
+    if (history !== null) state.chat = history;
+  } catch (error) {
+    console.error("Failed to load canonical B.O.B. conversation", error);
+  }
+
+  void refreshOpenRouter().finally(render);
+  void refreshAdapters().finally(render);
   installAccessibilityPreferencePersistence();
   render();
 

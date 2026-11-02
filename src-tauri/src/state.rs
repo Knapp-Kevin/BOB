@@ -4,8 +4,39 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fs, path::Path, sync::Mutex, time::Duration};
 use tauri::State;
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 7;
 const DATABASE_NAME: &str = "bob.sqlite3";
+const PROFILE_LOCK_NAME: &str = "bob.profile.lock";
+#[cfg(windows)]
+const ERROR_SHARING_VIOLATION: i32 = 32;
+
+/// Monthly spending limit and model token prices (micro-dollars; prices per
+/// million tokens). All are required before metered use is allowed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SpendLimits {
+    pub monthly_cap_micros: Option<i64>,
+    pub input_price_micros: Option<i64>,
+    pub output_price_micros: Option<i64>,
+}
+
+impl SpendLimits {
+    fn validate(&self) -> Result<()> {
+        if self
+            .monthly_cap_micros
+            .is_some_and(|cap| !crate::spend::validate_cap(cap))
+        {
+            bail!("invalid monthly spending limit");
+        }
+        if [self.input_price_micros, self.output_price_micros]
+            .into_iter()
+            .flatten()
+            .any(|price| !crate::spend::validate_price(price))
+        {
+            bail!("invalid model token price");
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,8 +73,73 @@ pub struct AccessibilityPreferences {
     pub reduced_motion: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatEntry {
+    pub author: String,
+    pub text: String,
+}
+
 pub struct Store {
     connection: Mutex<Connection>,
+    // Declared after the connection so the connection closes before the claim is released.
+    _profile_lock: ProfileLock,
+}
+
+/// Another process holds the profile lock. Startup reports this to the user
+/// instead of failing silently (see `lib.rs`).
+#[derive(Debug)]
+pub struct ProfileInUse {
+    pub profile: String,
+}
+
+impl std::fmt::Display for ProfileInUse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "another B.O.B. instance is already using the profile at {}; close it before starting B.O.B. again",
+            self.profile
+        )
+    }
+}
+
+impl std::error::Error for ProfileInUse {}
+
+/// Exclusive claim on one app-data profile for the lifetime of a `Store`.
+///
+/// Canonical saves replace the whole work state, so two processes writing the same
+/// profile silently drop each other's changes. On Windows the claim is an unshared
+/// handle on a lock file; the OS releases it when the process exits, including after a
+/// crash, so there is no stale lock to clean up. Other platforms rely on the
+/// single-instance plugin registered in `lib.rs`.
+struct ProfileLock {
+    _file: fs::File,
+}
+
+impl ProfileLock {
+    fn acquire(app_data_dir: &Path) -> Result<Self> {
+        let path = app_data_dir.join(PROFILE_LOCK_NAME);
+        let mut options = fs::OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.share_mode(0);
+        }
+
+        match options.open(&path) {
+            Ok(file) => Ok(Self { _file: file }),
+            #[cfg(windows)]
+            Err(error) if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION) => {
+                Err(ProfileInUse {
+                    profile: app_data_dir.display().to_string(),
+                }
+                .into())
+            }
+            Err(error) => Err(error)
+                .with_context(|| format!("claim B.O.B. profile lock at {}", path.display())),
+        }
+    }
 }
 
 impl Store {
@@ -54,6 +150,7 @@ impl Store {
                 app_data_dir.display()
             )
         })?;
+        let profile_lock = ProfileLock::acquire(app_data_dir)?;
 
         let db_path = app_data_dir.join(DATABASE_NAME);
         let existed_before_open = db_path.exists();
@@ -71,6 +168,7 @@ impl Store {
 
         Ok(Self {
             connection: Mutex::new(connection),
+            _profile_lock: profile_lock,
         })
     }
 
@@ -151,6 +249,303 @@ impl Store {
         transaction
             .commit()
             .context("commit canonical work-state transaction")?;
+        Ok(())
+    }
+
+    pub fn openrouter_settings(&self) -> Result<(Option<String>, bool, bool)> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        connection.query_row(
+            "SELECT model_id, cloud_enabled, metered_enabled FROM openrouter_settings WHERE singleton = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get::<_, i64>(1)? != 0, row.get::<_, i64>(2)? != 0)),
+        ).context("read OpenRouter authorization")
+    }
+
+    pub fn set_openrouter_settings(
+        &self,
+        model: Option<&str>,
+        cloud: bool,
+        metered: bool,
+    ) -> Result<()> {
+        if let Some(model) = model {
+            crate::inference_policy::validate_openrouter_model_id(model)
+                .map_err(|reason| anyhow!("invalid OpenRouter model identifier: {reason:?}"))?;
+        }
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let affected = connection.execute(
+            "UPDATE openrouter_settings SET model_id = ?1, cloud_enabled = ?2, metered_enabled = ?3 WHERE singleton = 1",
+            params![model, i64::from(cloud), i64::from(metered)],
+        )?;
+        if affected != 1 {
+            bail!("OpenRouter settings record missing; refusing silent authorization update");
+        }
+        Ok(())
+    }
+
+    /// Persisted authorization for one direct-vendor or CLI adapter, keyed by
+    /// its stable adapter ID. Rows exist for exactly the supported adapters.
+    pub fn adapter_settings(&self, adapter: &str) -> Result<(Option<String>, bool, bool)> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        connection
+            .query_row(
+                "SELECT model_id, cloud_enabled, metered_enabled FROM adapter_settings WHERE adapter = ?1",
+                params![adapter],
+                |row| Ok((row.get(0)?, row.get::<_, i64>(1)? != 0, row.get::<_, i64>(2)? != 0)),
+            )
+            .context("read adapter authorization")
+    }
+
+    pub fn set_adapter_settings(
+        &self,
+        adapter: &str,
+        model: Option<&str>,
+        cloud: bool,
+        metered: bool,
+    ) -> Result<()> {
+        if let Some(model) = model {
+            crate::inference_policy::validate_vendor_model_id(model)
+                .map_err(|reason| anyhow!("invalid model identifier: {reason:?}"))?;
+        }
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let affected = connection.execute(
+            "UPDATE adapter_settings SET model_id = ?2, cloud_enabled = ?3, metered_enabled = ?4 WHERE adapter = ?1",
+            params![adapter, model, i64::from(cloud), i64::from(metered)],
+        )?;
+        if affected != 1 {
+            bail!("adapter settings record missing; refusing silent authorization update");
+        }
+        Ok(())
+    }
+
+    pub fn openrouter_free_only(&self) -> Result<bool> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        connection
+            .query_row(
+                "SELECT free_only FROM openrouter_settings WHERE singleton = 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|value| value != 0)
+            .context("read OpenRouter free-only mode")
+    }
+
+    pub fn set_openrouter_free_only(&self, free_only: bool) -> Result<()> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let affected = connection.execute(
+            "UPDATE openrouter_settings SET free_only = ?1 WHERE singleton = 1",
+            params![i64::from(free_only)],
+        )?;
+        if affected != 1 {
+            bail!("OpenRouter settings record missing; refusing silent authorization update");
+        }
+        Ok(())
+    }
+
+    /// Monthly limit and token prices for an API adapter, in micro-dollars.
+    pub fn adapter_limits(&self, adapter: &str) -> Result<SpendLimits> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        connection
+            .query_row(
+                "SELECT monthly_cap_micros, input_price_micros, output_price_micros FROM adapter_settings WHERE adapter = ?1",
+                params![adapter],
+                |row| {
+                    Ok(SpendLimits {
+                        monthly_cap_micros: row.get(0)?,
+                        input_price_micros: row.get(1)?,
+                        output_price_micros: row.get(2)?,
+                    })
+                },
+            )
+            .context("read adapter spending limit")
+    }
+
+    pub fn set_adapter_limits(&self, adapter: &str, limits: SpendLimits) -> Result<()> {
+        limits.validate()?;
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let affected = connection.execute(
+            "UPDATE adapter_settings SET monthly_cap_micros = ?2, input_price_micros = ?3, output_price_micros = ?4 WHERE adapter = ?1",
+            params![
+                adapter,
+                limits.monthly_cap_micros,
+                limits.input_price_micros,
+                limits.output_price_micros
+            ],
+        )?;
+        if affected != 1 {
+            bail!("adapter settings record missing; refusing silent authorization update");
+        }
+        Ok(())
+    }
+
+    pub fn openrouter_monthly_cap(&self) -> Result<Option<i64>> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        connection
+            .query_row(
+                "SELECT monthly_cap_micros FROM openrouter_settings WHERE singleton = 1",
+                [],
+                |row| row.get(0),
+            )
+            .context("read OpenRouter spending limit")
+    }
+
+    pub fn set_openrouter_monthly_cap(&self, cap_micros: Option<i64>) -> Result<()> {
+        if cap_micros.is_some_and(|cap| !crate::spend::validate_cap(cap)) {
+            bail!("invalid monthly spending limit");
+        }
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let affected = connection.execute(
+            "UPDATE openrouter_settings SET monthly_cap_micros = ?1 WHERE singleton = 1",
+            params![cap_micros],
+        )?;
+        if affected != 1 {
+            bail!("OpenRouter settings record missing; refusing silent authorization update");
+        }
+        Ok(())
+    }
+
+    pub fn spent_micros(&self, provider: &str, month: &str) -> Result<i64> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        Ok(connection
+            .query_row(
+                "SELECT spent_micros FROM spend_ledger WHERE provider = ?1 AND month = ?2",
+                params![provider, month],
+                |row| row.get(0),
+            )
+            .optional()
+            .context("read spend ledger")?
+            .unwrap_or(0))
+    }
+
+    /// Atomically adds `amount` to this month's spend, refusing if the total
+    /// would exceed `cap_micros`. Nothing is recorded on refusal.
+    pub fn reserve_spend(
+        &self,
+        provider: &str,
+        month: &str,
+        amount: i64,
+        cap_micros: i64,
+    ) -> Result<()> {
+        let mut connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let spent: i64 = transaction
+            .query_row(
+                "SELECT spent_micros FROM spend_ledger WHERE provider = ?1 AND month = ?2",
+                params![provider, month],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(0);
+        if spent.saturating_add(amount.max(0)) > cap_micros {
+            bail!("monthly spending limit reached");
+        }
+        transaction.execute(
+            "INSERT INTO spend_ledger(provider, month, spent_micros) VALUES (?1, ?2, ?3)
+             ON CONFLICT(provider, month) DO UPDATE SET spent_micros = spent_micros + excluded.spent_micros",
+            params![provider, month, amount.max(0)],
+        )?;
+        transaction.commit().context("record reserved spend")?;
+        Ok(())
+    }
+
+    /// Applies a correction (for example actual cost minus reservation).
+    pub fn adjust_spend(&self, provider: &str, month: &str, delta: i64) -> Result<()> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        connection
+            .execute(
+                "INSERT INTO spend_ledger(provider, month, spent_micros) VALUES (?1, ?2, max(?3, 0))
+                 ON CONFLICT(provider, month) DO UPDATE SET spent_micros = max(spent_micros + ?3, 0)",
+                params![provider, month, delta],
+            )
+            .context("record actual spend")?;
+        Ok(())
+    }
+
+    pub fn load_chat(&self) -> Result<Vec<ChatEntry>> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let mut statement =
+            connection.prepare("SELECT author, text FROM chat_entries ORDER BY id ASC")?;
+        let entries = statement
+            .query_map([], |row| {
+                Ok(ChatEntry {
+                    author: row.get(0)?,
+                    text: row.get(1)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(entries)
+    }
+
+    pub fn append_chat(&self, entry: ChatEntry) -> Result<Vec<ChatEntry>> {
+        if !matches!(entry.author.as_str(), "user" | "bob")
+            || entry.text.trim().is_empty()
+            || entry.text.len() > 8_000
+        {
+            bail!("invalid chat entry");
+        }
+        let mut connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute(
+            "INSERT INTO chat_entries (author, text) VALUES (?1, ?2)",
+            params![entry.author, entry.text],
+        )?;
+        // Retain the most recent 200 turns to bound storage and on-screen context.
+        transaction.execute("DELETE FROM chat_entries WHERE id NOT IN (SELECT id FROM chat_entries ORDER BY id DESC LIMIT 200)", [])?;
+        transaction.commit()?;
+        drop(connection);
+        self.load_chat()
+    }
+
+    pub fn clear_chat(&self) -> Result<()> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        connection.execute("DELETE FROM chat_entries", [])?;
         Ok(())
     }
 
@@ -239,6 +634,24 @@ impl Store {
 
         Ok(())
     }
+}
+
+#[tauri::command]
+pub fn load_chat_history(store: State<'_, Store>) -> std::result::Result<Vec<ChatEntry>, String> {
+    store.load_chat().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn append_chat_message(
+    store: State<'_, Store>,
+    entry: ChatEntry,
+) -> std::result::Result<Vec<ChatEntry>, String> {
+    store.append_chat(entry).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn clear_chat_history(store: State<'_, Store>) -> std::result::Result<(), String> {
+    store.clear_chat().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -490,6 +903,61 @@ fn run_migrations(
                      PRAGMA user_version = 3;",
                 )
                 .context("apply schema migration 3")?,
+            3 => transaction
+                .execute_batch(
+                    "CREATE TABLE chat_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    author TEXT NOT NULL CHECK(author IN ('user', 'bob')),
+                    text TEXT NOT NULL CHECK(length(text) > 0)
+                );
+                PRAGMA user_version = 4;",
+                )
+                .context("apply schema migration 4")?,
+            4 => transaction
+                .execute_batch(
+                    "CREATE TABLE openrouter_settings (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                    model_id TEXT,
+                    cloud_enabled INTEGER NOT NULL DEFAULT 0 CHECK(cloud_enabled IN (0, 1)),
+                    metered_enabled INTEGER NOT NULL DEFAULT 0 CHECK(metered_enabled IN (0, 1))
+                );
+                INSERT INTO openrouter_settings(singleton, model_id, cloud_enabled, metered_enabled)
+                VALUES (1, NULL, 0, 0);
+                PRAGMA user_version = 5;",
+                )
+                .context("apply schema migration 5")?,
+            5 => transaction
+                .execute_batch(
+                    "CREATE TABLE adapter_settings (
+                    adapter TEXT PRIMARY KEY NOT NULL
+                        CHECK(adapter IN ('openai', 'anthropic')),
+                    model_id TEXT,
+                    cloud_enabled INTEGER NOT NULL DEFAULT 0 CHECK(cloud_enabled IN (0, 1)),
+                    metered_enabled INTEGER NOT NULL DEFAULT 0 CHECK(metered_enabled IN (0, 1)),
+                    monthly_cap_micros INTEGER CHECK(monthly_cap_micros IS NULL OR monthly_cap_micros > 0),
+                    input_price_micros INTEGER CHECK(input_price_micros IS NULL OR input_price_micros > 0),
+                    output_price_micros INTEGER CHECK(output_price_micros IS NULL OR output_price_micros > 0)
+                );
+                INSERT INTO adapter_settings(adapter, model_id, cloud_enabled, metered_enabled)
+                VALUES ('openai', NULL, 0, 0), ('anthropic', NULL, 0, 0);
+                PRAGMA user_version = 6;",
+                )
+                .context("apply schema migration 6")?,
+            6 => transaction
+                .execute_batch(
+                    "ALTER TABLE openrouter_settings ADD COLUMN free_only INTEGER NOT NULL DEFAULT 1
+                        CHECK(free_only IN (0, 1));
+                ALTER TABLE openrouter_settings ADD COLUMN monthly_cap_micros INTEGER
+                        CHECK(monthly_cap_micros IS NULL OR monthly_cap_micros > 0);
+                CREATE TABLE spend_ledger (
+                    provider TEXT NOT NULL CHECK(provider IN ('openrouter', 'openai', 'anthropic')),
+                    month TEXT NOT NULL CHECK(length(month) = 7),
+                    spent_micros INTEGER NOT NULL DEFAULT 0 CHECK(spent_micros >= 0),
+                    PRIMARY KEY (provider, month)
+                );
+                PRAGMA user_version = 7;",
+                )
+                .context("apply schema migration 7")?,
             other => bail!("no migration path exists from schema version {other}"),
         }
 
@@ -610,6 +1078,439 @@ mod tests {
         store.save(&expected)?;
 
         assert_eq!(store.load()?, expected);
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn second_store_on_same_profile_fails_closed_until_first_closes() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let first = Store::open(directory.path())?;
+        first.save(&sample_state())?;
+
+        let error = match Store::open(directory.path()) {
+            Ok(_) => panic!("a second store must not open a profile that is already in use"),
+            Err(error) => error,
+        };
+        assert!(
+            format!("{error:#}").contains("already using the profile"),
+            "unexpected error: {error:#}"
+        );
+        assert!(
+            error.downcast_ref::<ProfileInUse>().is_some(),
+            "startup must be able to recognise a busy profile: {error:#}"
+        );
+        assert_eq!(first.load()?, sample_state());
+
+        drop(first);
+        let reopened = Store::open(directory.path())?;
+        assert_eq!(reopened.load()?, sample_state());
+        Ok(())
+    }
+
+    #[test]
+    fn chat_survives_store_reopen_and_rejects_invalid_entries() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        {
+            let store = Store::open(directory.path())?;
+            store.append_chat(ChatEntry {
+                author: "user".into(),
+                text: "Return to this tomorrow".into(),
+            })?;
+            store.append_chat(ChatEntry {
+                author: "bob".into(),
+                text: "I'll keep the context.".into(),
+            })?;
+            assert!(store
+                .append_chat(ChatEntry {
+                    author: "system".into(),
+                    text: "bad".into()
+                })
+                .is_err());
+        }
+        let reopened = Store::open(directory.path())?;
+        let history = reopened.load_chat()?;
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].text, "Return to this tomorrow");
+        assert_eq!(history[1].author, "bob");
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_chat_over_byte_limit_without_partial_write() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        store.append_chat(ChatEntry {
+            author: "user".into(),
+            text: "valid".into(),
+        })?;
+        assert!(store
+            .append_chat(ChatEntry {
+                author: "user".into(),
+                text: "🧠".repeat(2_001),
+            })
+            .is_err());
+        assert_eq!(store.load_chat()?.len(), 1);
+        assert_eq!(store.load_chat()?[0].text, "valid");
+        Ok(())
+    }
+
+    #[test]
+    fn missing_openrouter_settings_row_rejects_authorization_update() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        {
+            let connection = store.connection.lock().unwrap();
+            connection.execute("DELETE FROM openrouter_settings WHERE singleton = 1", [])?;
+        }
+        assert!(store
+            .set_openrouter_settings(Some("vendor/model"), true, true)
+            .is_err());
+        assert!(store.openrouter_settings().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn openrouter_settings_are_deny_by_default_and_survive_reopen() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        assert_eq!(store.openrouter_settings()?, (None, false, false));
+        assert!(store
+            .set_openrouter_settings(Some("bad model"), true, true)
+            .is_err());
+        assert_eq!(store.openrouter_settings()?, (None, false, false));
+        store.set_openrouter_settings(Some("vendor/approved-model"), true, false)?;
+        drop(store);
+        let reopened = Store::open(directory.path())?;
+        assert_eq!(
+            reopened.openrouter_settings()?,
+            (Some("vendor/approved-model".into()), true, false)
+        );
+        reopened.set_openrouter_settings(None, false, false)?;
+        assert_eq!(reopened.openrouter_settings()?, (None, false, false));
+        Ok(())
+    }
+
+    #[test]
+    fn clearing_chat_preserves_canonical_work_state() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        store.save(&sample_state())?;
+        store.append_chat(ChatEntry {
+            author: "user".into(),
+            text: "Private context".into(),
+        })?;
+        store.clear_chat()?;
+        assert!(store.load_chat()?.is_empty());
+        assert_eq!(store.load()?, sample_state());
+        drop(store);
+        assert!(Store::open(directory.path())?.load_chat()?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn chat_history_retains_latest_two_hundred_messages() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+
+        for number in 0..205 {
+            store.append_chat(ChatEntry {
+                author: "user".into(),
+                text: format!("Message {number}"),
+            })?;
+        }
+
+        let history = store.load_chat()?;
+        assert_eq!(history.len(), 200);
+        assert_eq!(history[0].text, "Message 5");
+        assert_eq!(history[199].text, "Message 204");
+        Ok(())
+    }
+
+    #[test]
+    fn v4_to_v5_migration_preserves_user_data_and_denies_openrouter() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let preferences = AccessibilityPreferences {
+            larger_text: true,
+            reduced_motion: true,
+        };
+        {
+            let store = Store::open(directory.path())?;
+            store.save(&sample_state())?;
+            store.save_accessibility_preferences(preferences)?;
+            store.append_chat(ChatEntry {
+                author: "user".into(),
+                text: "Keep this conversation".into(),
+            })?;
+        }
+
+        let db_path = directory.path().join(DATABASE_NAME);
+        let legacy = Connection::open(&db_path)?;
+        legacy.execute_batch(
+            "DROP TABLE spend_ledger; DROP TABLE adapter_settings; DROP TABLE openrouter_settings; PRAGMA user_version = 4;",
+        )?;
+        drop(legacy);
+
+        let upgraded = Store::open(directory.path())?;
+        assert_eq!(
+            user_version(&upgraded.connection.lock().unwrap())?,
+            SCHEMA_VERSION
+        );
+        assert_eq!(upgraded.load()?, sample_state());
+        assert_eq!(upgraded.load_accessibility_preferences()?, preferences);
+        let chat = upgraded.load_chat()?;
+        assert_eq!(chat.len(), 1);
+        assert_eq!(chat[0].text, "Keep this conversation");
+        assert_eq!(upgraded.openrouter_settings()?, (None, false, false));
+        assert!(directory
+            .path()
+            .join("recovery")
+            .join("bob-pre-migration-1.sqlite3")
+            .exists());
+        Ok(())
+    }
+
+    #[test]
+    fn v5_to_v6_migration_preserves_user_data_and_denies_every_adapter() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        {
+            let store = Store::open(directory.path())?;
+            store.save(&sample_state())?;
+            store.set_openrouter_settings(Some("vendor/approved-model"), true, true)?;
+            store.append_chat(ChatEntry {
+                author: "user".into(),
+                text: "Keep this conversation".into(),
+            })?;
+        }
+        let db_path = directory.path().join(DATABASE_NAME);
+        let legacy = Connection::open(&db_path)?;
+        legacy.execute_batch(
+            "ALTER TABLE openrouter_settings DROP COLUMN free_only; ALTER TABLE openrouter_settings DROP COLUMN monthly_cap_micros; DROP TABLE spend_ledger; DROP TABLE adapter_settings; PRAGMA user_version = 5;",
+        )?;
+        drop(legacy);
+
+        let upgraded = Store::open(directory.path())?;
+        assert_eq!(
+            user_version(&upgraded.connection.lock().unwrap())?,
+            SCHEMA_VERSION
+        );
+        assert_eq!(upgraded.load()?, sample_state());
+        assert_eq!(upgraded.load_chat()?[0].text, "Keep this conversation");
+        assert_eq!(
+            upgraded.openrouter_settings()?,
+            (Some("vendor/approved-model".into()), true, true),
+            "existing OpenRouter authorization is untouched"
+        );
+        for adapter in ["openai", "anthropic"] {
+            assert_eq!(upgraded.adapter_settings(adapter)?, (None, false, false));
+        }
+        for adapter in ["claude_cli", "codex_cli"] {
+            assert!(
+                upgraded.adapter_settings(adapter).is_err(),
+                "no CLI adapters"
+            );
+        }
+        assert!(directory
+            .path()
+            .join("recovery")
+            .join("bob-pre-migration-1.sqlite3")
+            .exists());
+        Ok(())
+    }
+
+    #[test]
+    fn v6_to_v7_migration_defaults_openrouter_to_free_and_requires_a_cap() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        {
+            let store = Store::open(directory.path())?;
+            store.save(&sample_state())?;
+            store.set_openrouter_settings(Some("vendor/approved-model"), true, true)?;
+            store.set_adapter_settings("openai", Some("gpt-test-mini"), true, true)?;
+        }
+        let db_path = directory.path().join(DATABASE_NAME);
+        let legacy = Connection::open(&db_path)?;
+        legacy.execute_batch(
+            "ALTER TABLE openrouter_settings DROP COLUMN free_only; ALTER TABLE openrouter_settings DROP COLUMN monthly_cap_micros; DROP TABLE spend_ledger; PRAGMA user_version = 6;",
+        )?;
+        drop(legacy);
+
+        let upgraded = Store::open(directory.path())?;
+        assert_eq!(user_version(&upgraded.connection.lock().unwrap())?, 7);
+        assert_eq!(upgraded.load()?, sample_state());
+        assert_eq!(
+            upgraded.openrouter_settings()?,
+            (Some("vendor/approved-model".into()), true, true)
+        );
+        assert!(upgraded.openrouter_free_only()?, "free-only is the default");
+        assert_eq!(upgraded.openrouter_monthly_cap()?, None, "no cap until set");
+        assert_eq!(upgraded.spent_micros("openrouter", "2026-11")?, 0);
+        assert_eq!(
+            upgraded.adapter_settings("openai")?,
+            (Some("gpt-test-mini".into()), true, true)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn new_profiles_default_openrouter_to_free_without_caps() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        assert!(store.openrouter_free_only()?);
+        assert_eq!(store.openrouter_monthly_cap()?, None);
+        for adapter in ["openai", "anthropic"] {
+            assert_eq!(store.adapter_limits(adapter)?, SpendLimits::default());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn spending_limits_are_validated_and_survive_reopen() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        let limits = SpendLimits {
+            monthly_cap_micros: Some(crate::spend::DEFAULT_MONTHLY_CAP_MICROS),
+            input_price_micros: Some(3_000_000),
+            output_price_micros: Some(15_000_000),
+        };
+        store.set_adapter_limits("anthropic", limits)?;
+        assert!(store
+            .set_adapter_limits(
+                "openai",
+                SpendLimits {
+                    monthly_cap_micros: Some(0),
+                    ..limits
+                }
+            )
+            .is_err());
+        assert!(store
+            .set_adapter_limits(
+                "openai",
+                SpendLimits {
+                    input_price_micros: Some(-1),
+                    ..limits
+                }
+            )
+            .is_err());
+        assert!(store.set_openrouter_monthly_cap(Some(0)).is_err());
+        store.set_openrouter_monthly_cap(Some(5_000_000))?;
+        drop(store);
+        let reopened = Store::open(directory.path())?;
+        assert_eq!(reopened.adapter_limits("anthropic")?, limits);
+        assert_eq!(reopened.openrouter_monthly_cap()?, Some(5_000_000));
+        Ok(())
+    }
+
+    #[test]
+    fn spend_ledger_reserves_atomically_and_resets_monthly() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        store.reserve_spend("openai", "2026-11", 600, 1_000)?;
+        assert!(store
+            .reserve_spend("openai", "2026-11", 500, 1_000)
+            .is_err());
+        assert_eq!(
+            store.spent_micros("openai", "2026-11")?,
+            600,
+            "refusal records nothing"
+        );
+        store.adjust_spend("openai", "2026-11", -500)?;
+        assert_eq!(store.spent_micros("openai", "2026-11")?, 100);
+        store.adjust_spend("openai", "2026-11", -5_000)?;
+        assert_eq!(
+            store.spent_micros("openai", "2026-11")?,
+            0,
+            "never negative"
+        );
+        store.reserve_spend("openai", "2026-11", 1_000, 1_000)?;
+        assert_eq!(
+            store.spent_micros("openai", "2026-12")?,
+            0,
+            "new month starts at zero"
+        );
+        assert_eq!(
+            store.spent_micros("anthropic", "2026-11")?,
+            0,
+            "per provider"
+        );
+        assert!(store.reserve_spend("gemini", "2026-11", 1, 10).is_err());
+        drop(store);
+        assert_eq!(
+            Store::open(directory.path())?.spent_micros("openai", "2026-11")?,
+            1_000
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn adapter_settings_are_deny_by_default_validated_and_survive_reopen() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        assert!(store.adapter_settings("gemini").is_err(), "unknown adapter");
+        assert!(store
+            .set_adapter_settings("gemini", Some("model"), true, true)
+            .is_err());
+        for invalid in ["--tools", "vendor/model", "bad model"] {
+            assert!(store
+                .set_adapter_settings("openai", Some(invalid), true, true)
+                .is_err());
+        }
+        assert_eq!(store.adapter_settings("openai")?, (None, false, false));
+        store.set_adapter_settings("anthropic", Some("claude-test-5"), true, false)?;
+        drop(store);
+        let reopened = Store::open(directory.path())?;
+        assert_eq!(
+            reopened.adapter_settings("anthropic")?,
+            (Some("claude-test-5".into()), true, false)
+        );
+        assert_eq!(reopened.adapter_settings("openai")?, (None, false, false));
+        Ok(())
+    }
+
+    #[test]
+    fn openrouter_router_models_cannot_be_approved() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        for id in ["openrouter/auto", "no-vendor", "a/b/c"] {
+            assert!(store.set_openrouter_settings(Some(id), true, true).is_err());
+        }
+        assert_eq!(store.openrouter_settings()?, (None, false, false));
+        Ok(())
+    }
+
+    #[test]
+    fn v3_to_v4_migration_preserves_existing_work_and_preferences() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        {
+            let store = Store::open(directory.path())?;
+            store.save(&sample_state())?;
+            store.save_accessibility_preferences(AccessibilityPreferences {
+                larger_text: true,
+                reduced_motion: false,
+            })?;
+        }
+
+        let db_path = directory.path().join(DATABASE_NAME);
+        let legacy = Connection::open(&db_path)?;
+        legacy.execute_batch(
+            "DROP TABLE chat_entries; DROP TABLE spend_ledger; DROP TABLE openrouter_settings; DROP TABLE adapter_settings; PRAGMA user_version = 3;",
+        )?;
+        drop(legacy);
+
+        let upgraded = Store::open(directory.path())?;
+        assert_eq!(upgraded.load()?, sample_state());
+        assert_eq!(
+            upgraded.load_accessibility_preferences()?,
+            AccessibilityPreferences {
+                larger_text: true,
+                reduced_motion: false,
+            }
+        );
+        assert!(upgraded.load_chat()?.is_empty());
+        assert!(directory
+            .path()
+            .join("recovery")
+            .join("bob-pre-migration-1.sqlite3")
+            .exists());
         Ok(())
     }
 

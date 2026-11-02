@@ -66,6 +66,12 @@ Provider/model changes that materially affect billing, privacy, locality, or use
 
 The currently implemented cloud adapter is Gemini Developer API, retained as an **advanced optional** capability behind its accepted professional/business-use, unpaid-service data-use, credential, and billing boundaries.
 
+An optional, default-disabled OpenRouter Chat path is implemented as an explicitly enabled `metered` cloud capability; its boundary is defined in `docs/governance/AI_COST_AND_PROVIDER_POLICY.md`. Free models only is its default mode: every request's price is capped at zero, and any reply that reports a charge is dropped. Paid OpenRouter models need a capped key and a B.O.B. monthly spending limit.
+
+Direct OpenAI API and Anthropic API Chat paths are implemented with the same `metered` cloud boundary: off by default, one approved model, persisted cloud and metered permissions, an OS-stored API key, a per-launch session grant, and no fallback to another provider. Every metered path requires a B.O.B.-side monthly spending limit as part of setup (pre-filled at $20). For OpenAI and Anthropic it also requires the model's token prices, and B.O.B. refuses any request whose worst-case cost could exceed the limit. Settings opens each provider's key, limit, and pricing pages directly.
+
+B.O.B. is API-only: vendor agent CLIs such as Claude Code and Codex are out of scope by owner decision (2026-11-02), because current vendor terms do not clearly allow a third-party app to drive a user's subscription through them and they are separate agents rather than model capabilities. Only one cloud Chat backend can be enabled at a time. Owner live-validation steps are in `docs/LIVE_INFERENCE_VALIDATION.md`.
+
 RFC-0002 defines the accepted provider-independent runtime contract. The Rust-owned runtime policy and a bounded non-user-facing Ollama tracer are implemented on `master`.
 
 Wayfinder #79 and resolved research #80/#81 establish the current direction:

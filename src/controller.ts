@@ -1,6 +1,8 @@
 import { activeItem, applyPlanProjection, escapeHtml, focusItems, hydratePersistentWorkState, showToast, state, type ItemKind, type ReplanResult, type Route, type SetupStep } from "./model";
-import { applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
+import { generateWithOpenRouter, appendChatMessage, clearChatHistory, applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, resumeDeferredTask, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
 import { renderShell } from "./views";
+import { activeAdapter, adapterFailureMessage, bindAdapterControls, bindProviderPageButtons, generateWithActiveAdapter, refreshAdapters } from "./adapters_ui";
+import { checkOpenRouterKey, saveOpenRouterAuthorization, saveOpenRouterKey, removeOpenRouterKey, openRouterChatEnabled, openRouterFailureMessage, refreshOpenRouter, setOpenRouterChatEnabled } from "./openrouter_ui";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
 if (!root) throw new Error("Missing app root");
@@ -22,8 +24,19 @@ const replyFor = (input: string) => {
 const queueRender = () => render();
 window.addEventListener("bob:render", queueRender);
 
+// The Chat panel has a fixed height; keep the reader's scroll position across
+// full re-renders and follow the conversation only when its content changes.
+let renderedChatLength = -1;
+
 export function render() {
+  const previousScroll = root.querySelector<HTMLElement>(".messages")?.scrollTop;
   root.innerHTML = renderShell();
+  const messages = root.querySelector<HTMLElement>(".messages");
+  if (messages) {
+    const changed = state.chat.length !== renderedChatLength || previousScroll === undefined;
+    messages.scrollTop = changed ? messages.scrollHeight : previousScroll;
+  }
+  renderedChatLength = state.chat.length;
   bindEvents();
 }
 
@@ -61,19 +74,80 @@ async function runWorkMutation(
   render();
 }
 
-function pushConversation(text: string) {
-  state.chat.push({ author: "user", text });
-  render();
+let chatQueue = Promise.resolve();
+const MAX_CHAT_BYTES = 8_000;
+const chatByteLength = (value: string) => new TextEncoder().encode(value).length;
 
-  void assistWithBob(text)
-    .then((response) => {
-      state.chat.push({ author: "bob", text: response ?? replyFor(text) });
-    })
-    .catch((error) => {
-      console.error("Native B.O.B. assist failed; using deterministic browser fallback", error);
-      state.chat.push({ author: "bob", text: replyFor(text) });
-    })
-    .finally(render);
+function pushConversation(text: string) {
+  if (!text.trim() || chatByteLength(text) > MAX_CHAT_BYTES) {
+    showToast("Message is too long. Keep it under 8,000 UTF-8 bytes.");
+    render();
+    return;
+  }
+  // Serialize conversations so responses and durable history remain ordered.
+  chatQueue = chatQueue.then(async () => {
+    try {
+      const saved = await appendChatMessage({ author: "user", text });
+      if (saved) state.chat = saved;
+      else state.chat.push({ author: "user", text });
+    } catch (error) {
+      console.error("Could not save B.O.B. message", error);
+      showToast("Message could not be saved. Conversation was not sent.");
+      render();
+      return;
+    }
+    render();
+    let response: string;
+    try {
+      const adapter = activeAdapter()?.adapter;
+      if (adapter) {
+        if (chatByteLength(text) > 4_000) {
+          showToast("Cloud providers accept up to 4,000 UTF-8 bytes per prompt. Nothing was sent to the provider.");
+          response = "That request is too long for the selected cloud model. Shorten it or turn off the provider in Settings.";
+        } else {
+          try {
+            response = await generateWithActiveAdapter(adapter, text);
+          } catch (error) {
+            console.error("Provider inference unavailable", error);
+            showToast(`${adapterFailureMessage(adapter, error)} B.O.B. is using local guidance for this response.`);
+            // Resynchronize with the backend grant, which may have been revoked.
+            await refreshAdapters();
+            response = (await assistWithBob(text)) ?? replyFor(text);
+          }
+        }
+      } else if (openRouterChatEnabled) {
+        if (chatByteLength(text) > 4_000) {
+          showToast("OpenRouter accepts up to 4,000 UTF-8 bytes per prompt. Nothing was sent to the provider.");
+          response = "That request is too long for the selected cloud model. Shorten it or turn off OpenRouter in Settings.";
+        } else {
+          try {
+            response = await generateWithOpenRouter(text);
+          } catch (error) {
+            console.error("OpenRouter inference unavailable", error);
+            showToast(`${openRouterFailureMessage(error)} B.O.B. is using local guidance for this response.`);
+            // Resynchronize with the backend grant, which may have been revoked.
+            await refreshOpenRouter();
+            response = (await assistWithBob(text)) ?? replyFor(text);
+          }
+        }
+      } else {
+        response = (await assistWithBob(text)) ?? replyFor(text);
+      }
+    } catch (error) {
+      console.error("B.O.B. assist failed; using deterministic guidance", error);
+      response = replyFor(text);
+    }
+    try {
+      const saved = await appendChatMessage({ author: "bob", text: response });
+      if (saved) state.chat = saved;
+      else state.chat.push({ author: "bob", text: response });
+    } catch (error) {
+      console.error("Failed to save B.O.B. response", error);
+      state.chat.push({ author: "bob", text: response });
+      showToast("B.O.B. replied, but the reply could not be saved.");
+    }
+    render();
+  }).catch((error) => console.error("B.O.B. conversation queue failed", error));
 }
 
 function downloadPortableExport(contents: string) {
@@ -156,6 +230,16 @@ function bindEvents() {
       .finally(render);
   });
 
+  document.querySelectorAll<HTMLElement>("[data-resume-deferred]").forEach((element) => element.addEventListener("click", () => {
+    const item = state.items.find((candidate) => candidate.id === element.dataset.resumeDeferred);
+    if (!item || item.kind !== "task" || item.status !== "deferred") return;
+    void runWorkMutation(
+      () => resumeDeferredTask(item.id),
+      () => { item.status = "planned"; state.activeId = item.id; },
+      "Returned to your plan. The task is ready when you are."
+    ).then(() => { state.route = "today"; render(); });
+  }));
+
   document.querySelectorAll<HTMLElement>("[data-complete]").forEach((element) => element.addEventListener("click", () => {
     const item = state.items.find((candidate) => candidate.id === element.dataset.complete);
     if (!item || item.kind !== "task") return;
@@ -214,6 +298,21 @@ function bindEvents() {
   document.querySelectorAll<HTMLElement>("[data-prompt]").forEach((element) => element.addEventListener("click", () => {
     pushConversation(element.dataset.prompt!);
   }));
+
+  document.querySelector("#clear-chat")?.addEventListener("click", () => {
+    if (!window.confirm("Clear the saved B.O.B. conversation? This cannot be undone. Your tasks and handoffs will remain.")) return;
+    chatQueue = chatQueue.then(async () => {
+      try {
+        await clearChatHistory();
+        state.chat = [];
+        showToast("Conversation cleared. Tasks and handoffs were kept.");
+      } catch (error) {
+        console.error("B.O.B. could not clear saved conversation", error);
+        showToast("Conversation could not be cleared. Your saved history was preserved.");
+      }
+      render();
+    });
+  });
 
   document.querySelector("#chat-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -300,6 +399,50 @@ function bindEvents() {
         console.error("Failed to create B.O.B. portable export", error);
         showToast("B.O.B. could not create the portable export. Canonical state was not changed.");
       });
+  });
+
+  bindAdapterControls(render);
+  bindProviderPageButtons(() => showToast("B.O.B. could not open your browser. Open the provider's website yourself."));
+  document.querySelector("#openrouter-chat")?.addEventListener("change", (event) => {
+    const enabled = (event.target as HTMLInputElement).checked;
+    if (enabled && !window.confirm("Send your Chat prompts to your approved OpenRouter model? Usage may incur separate charges. This only applies to this app session.")) {
+      render();
+      return;
+    }
+    void setOpenRouterChatEnabled(enabled).then((applied) => {
+      if (applied) showToast(openRouterChatEnabled ? "OpenRouter Chat enabled for this session." : "Local B.O.B. Chat restored.");
+    }).finally(render);
+  });
+  document.querySelector("#openrouter-config")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const modelId = document.querySelector<HTMLInputElement>("#openrouter-model")?.value.trim() || null;
+    const cloudEnabled = Boolean(document.querySelector<HTMLInputElement>("#openrouter-cloud")?.checked);
+    const meteredEnabled = Boolean(document.querySelector<HTMLInputElement>("#openrouter-metered")?.checked);
+    const freeOnly = Boolean(document.querySelector<HTMLInputElement>("#openrouter-free-only")?.checked);
+    const capValue = Number.parseFloat(document.querySelector<HTMLInputElement>("#openrouter-cap")?.value ?? "");
+    const monthlyCapUsd = Number.isFinite(capValue) && capValue > 0 ? capValue : null;
+    if (!freeOnly && meteredEnabled && monthlyCapUsd === null) {
+      showToast("Paid OpenRouter models need a monthly spending limit. Nothing was saved.");
+      return;
+    }
+    if (!freeOnly && cloudEnabled && meteredEnabled && !window.confirm(`Authorize sending Chat prompts to OpenRouter using the selected paid model, with a monthly limit of $${monthlyCapUsd?.toFixed(2)}? This can incur separately billed usage up to that limit.`)) return;
+    void saveOpenRouterAuthorization({ modelId, cloudEnabled, meteredEnabled, freeOnly, monthlyCapUsd }).finally(render);
+  });
+  document.querySelector("#openrouter-credential")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const input = document.querySelector<HTMLInputElement>("#openrouter-key");
+    const key = input?.value ?? "";
+    if (input) input.value = "";
+    void saveOpenRouterKey(key).finally(render);
+  });
+  document.querySelector("#openrouter-check-key")?.addEventListener("click", () => {
+    const pending = checkOpenRouterKey().finally(render);
+    render();
+    void pending;
+  });
+  document.querySelector("#openrouter-remove-key")?.addEventListener("click", () => {
+    if (!window.confirm("Remove the saved OpenRouter API key?")) return;
+    void removeOpenRouterKey().finally(render);
   });
 
   document.querySelector("#setup")?.addEventListener("click", () => openSetup());

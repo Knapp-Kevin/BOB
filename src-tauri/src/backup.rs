@@ -281,7 +281,7 @@ pub fn restore_user_backup_command(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{AccessibilityPreferences, HandoffSnapshot, WorkItem, WorkState};
+    use crate::state::{AccessibilityPreferences, ChatEntry, HandoffSnapshot, WorkItem, WorkState};
 
     fn create_bob_v3_database(path: &Path) -> Result<()> {
         let connection = Connection::open(path)?;
@@ -403,6 +403,65 @@ mod tests {
             .join(RECOVERY_DIR)
             .join(PRE_RESTORE_RECOVERY_NAME)
             .is_file());
+        Ok(())
+    }
+
+    #[test]
+    fn backup_and_restore_preserve_chat_history_with_work() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let canonical = directory.path().join(DATABASE_NAME);
+        create_bob_v3_database(&canonical)?;
+        let store = Store::open(directory.path())?;
+        store.append_chat(ChatEntry {
+            author: "user".into(),
+            text: "Remember the important context".into(),
+        })?;
+        let expected_state = store.load()?;
+        let expected_chat = store.load_chat()?;
+        let backup = create_user_backup(directory.path())?;
+
+        store.append_chat(ChatEntry {
+            author: "bob".into(),
+            text: "A later response".into(),
+        })?;
+        store.clear_chat()?;
+        store.save(&WorkState {
+            active_id: None,
+            items: vec![],
+            handoff: None,
+        })?;
+
+        restore_user_backup(directory.path(), &store, &backup)?;
+
+        assert_eq!(store.load()?, expected_state);
+        assert_eq!(store.load_chat()?, expected_chat);
+        drop(store);
+        let reopened = Store::open(directory.path())?;
+        assert_eq!(reopened.load_chat()?, expected_chat);
+        Ok(())
+    }
+
+    #[test]
+    fn clearing_chat_then_restoring_older_backup_keeps_empty_history() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let canonical = directory.path().join(DATABASE_NAME);
+        create_bob_v3_database(&canonical)?;
+        let store = Store::open(directory.path())?;
+        store.append_chat(ChatEntry {
+            author: "user".into(),
+            text: "Not present in older snapshot".into(),
+        })?;
+
+        let backup_dir = directory.path().join(USER_BACKUP_DIR);
+        fs::create_dir_all(&backup_dir)?;
+        let older = backup_dir.join("bob-backup-older-v3.sqlite3");
+        create_bob_v3_database(&older)?;
+
+        store.clear_chat()?;
+        restore_user_backup(directory.path(), &store, &older)?;
+
+        assert!(store.load_chat()?.is_empty());
+        assert_eq!(store.load()?.items[0].title, "Preserved task");
         Ok(())
     }
 

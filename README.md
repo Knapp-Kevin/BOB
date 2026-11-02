@@ -61,6 +61,18 @@ See [`docs/PRODUCT.md`](docs/PRODUCT.md), [`docs/ARCHITECTURE.md`](docs/ARCHITEC
 
 The landed normal-mode experience is intentionally calm: one dominant purpose per screen, progressive disclosure for secondary detail, conditional space for empty content, and coherent density without relying on reduced-information mode to rescue a cluttered default.
 
+## See it
+
+Real screens from the installed alpha package on Windows 11, using fictional demo data. Provenance, checksums and alt text are in [`docs/marketing/MANIFEST.md`](docs/marketing/MANIFEST.md).
+
+| Today | Inbox |
+| --- | --- |
+| ![Today showing one next action, a quick-capture bar, a one-item plan and a resume card](docs/marketing/screenshots/01-today.png) | ![Inbox listing four captured items classified as Reminder, Task, Idea and Task](docs/marketing/screenshots/02-inbox-classified.png) |
+| **Preview before apply** | **Overwhelmed mode** |
+| ![Chat showing a proposed change with Apply this change and Keep things as they are buttons](docs/marketing/screenshots/03-chat-preview-before-apply.png) | ![Today reduced to the next action and quick capture](docs/marketing/screenshots/05-today-overwhelmed-mode.png) |
+
+A 60-second silent walkthrough (capture, preview and apply, save your place, restart and resume) with captions and a transcript is in [`docs/marketing/video/`](docs/marketing/video/TRANSCRIPT.md).
+
 ## Architecture in one picture
 
 ```mermaid
@@ -133,7 +145,7 @@ This is a substantive executable **Alpha Product**. Native desktop alpha release
 The active desktop frontier remains intentionally narrow:
 
 1. **Startup recovery: issue #85 / draft PR #103.** The fail-closed recovery surface is implemented and hosted frontend/Rust/rendered evidence is green. It still requires native Windows 11 x64 corrupt-state, managed-backup preview, restart, filesystem-boundary, and accessibility evidence.
-2. **Windows NSIS acceptance: issue #84 / draft PR #115.** Reproducible packaging is implemented. The remaining work is native Windows default-path install, launch, state survival across relaunch, executable/icon identity, uninstall, stopped-process, and retained-user-data evidence.
+2. **Windows NSIS acceptance: issue #84 / draft PR #115.** Reproducible packaging is implemented. The remaining work is native Windows default-path install, launch, state survival across relaunch, executable/icon identity, uninstall, stopped-process, and retained-user-data evidence. The beta-candidate package built from `487f9fd` (product code identical to `a815ae1`) has now passed `scripts/qualify-installed-windows.ps1` in a disposable Windows Sandbox: default per-user install, launch, GUI subsystem, single-instance handoff, survival across relaunch and forced termination, corrupt-database fail-closed start, uninstall that removes the app and keeps user data, and reinstall. The evidence is on PR #132; the disposition of #84 stays with the owner.
 3. **Alpha convergence audit: Wayfinder #30.** After #103 and #84 receive truthful terminal dispositions, re-check the full alpha qualification contract before describing the integrated desktop build as native-qualified for release.
 4. **Then promote one already-authorized inference path with native evidence.** Do not widen the provider surface merely because the queue becomes cleaner.
 
@@ -261,6 +273,7 @@ Historical implementation is preserved in Git history and `archive/pre-revival-c
 | Understand the product | [`docs/PRODUCT.md`](docs/PRODUCT.md) |
 | Understand the system | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Understand the current user experience | [`docs/DESIGN.md`](docs/DESIGN.md) |
+| See screenshots and the walkthrough | [`docs/marketing/`](docs/marketing/README.md) |
 | Understand validation/release evidence | [`docs/VALIDATION.md`](docs/VALIDATION.md) |
 | See implementation direction | [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) |
 | See roadmap | [`docs/ROADMAP.md`](docs/ROADMAP.md) |

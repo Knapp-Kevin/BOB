@@ -144,6 +144,20 @@ Claude Code, Codex, Antigravity, or another future runtime may be supported only
 
 B.O.B. does not reuse private credentials, scrape proprietary sessions, or make any one vendor client mandatory.
 
+Owner decision (2026-11-02): B.O.B. is API-only and does not drive vendor agent CLIs. Current Anthropic and OpenAI terms do not clearly allow a third-party app to drive a user's subscription through Claude Code or Codex, and those CLIs are separate agents rather than model capabilities. See `docs/governance/AI_COST_AND_PROVIDER_POLICY.md`. Reopening this needs an explicit vendor allowance and a new owner decision.
+
+### OpenRouter free-only mode
+
+In free-only mode the OpenRouter adapter reports billing `free`, sends `provider.max_price` all zero, and treats a non-zero or missing `usage.cost` as a failure that revokes the session. Free-only mode is the default. For paid mode, readiness includes a `GET /api/v1/key` check that the key carries a credit limit with credit left, and a configured B.O.B. monthly spending limit with headroom.
+
+### Spend accounting
+
+Metered adapters reserve a worst-case cost against a B.O.B. monthly limit before invocation and settle the actual cost from the provider's reported usage afterwards (`src-tauri/src/spend.rs`, `spend_ledger` in schema v7). A provider rejection releases the reservation; an uncertain outcome keeps it.
+
+### Direct vendor APIs
+
+OpenAI (`chat/completions`) and Anthropic (Messages API, `x-api-key` and `anthropic-version: 2023-06-01`) adapters use API keys in the OS credential store, report `metered` billing and `cloud` locality, and share the OpenRouter transport bounds. They are reached only through fixed vendor endpoints.
+
 ### B.O.B.-native local runtime
 
 The first-party local seam is a B.O.B.-owned `LocalRuntimeAdapter`. Current #81 research supports an in-process Rust implementation initially backed by `mistralrs`, with GGUF as the first intentionally supported package format.

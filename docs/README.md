@@ -39,10 +39,12 @@ flowchart TB
 | Understand why B.O.B. exists and what it owns | [`PRODUCT.md`](PRODUCT.md) |
 | Understand the single-agent architecture, state ownership, inference routing, trust boundaries, and data flow | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
 | Understand the current Today, Inbox, Chat, Settings, accessibility, and low-cognitive-load interaction contract | [`DESIGN.md`](DESIGN.md) |
+| See draft screenshots and the walkthrough video (owner review pending) | [`marketing/`](marketing/README.md) |
 | Understand portable B.O.B. capabilities and future first-party host adapters | [`adr/ADR-0006-portable-capabilities-and-host-adapters.md`](adr/ADR-0006-portable-capabilities-and-host-adapters.md) and Proposed [`rfc/RFC-0004-portable-capability-host-contract.md`](rfc/RFC-0004-portable-capability-host-contract.md) |
 | Understand implementation order and current acceptance gates | [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) |
 | Understand release sequencing | [`ROADMAP.md`](ROADMAP.md) |
 | Understand native/product validation requirements | [`VALIDATION.md`](VALIDATION.md) |
+| Add provider keys and confirm each cloud inference adapter in the installed app | [`LIVE_INFERENCE_VALIDATION.md`](LIVE_INFERENCE_VALIDATION.md) |
 | Trace requirements to decisions and implementation authority | [`TRACEABILITY.md`](TRACEABILITY.md) |
 | Propose or review user-facing requirements | [`prd/`](prd/) |
 | Propose or review a significant implementation mechanism | [`rfc/`](rfc/) |
@@ -93,7 +95,7 @@ B.O.B. is public, MIT licensed, and an active **Alpha Product**. It is no longer
 The calm primary-workflow frontier is complete. Provider-independence research for the current runtime contract and local-runtime direction is also resolved enough to build under accepted authority. The immediate **alpha qualification** frontier is now narrower:
 
 1. native Windows 11 x64 startup-recovery acceptance under #85 / draft PR #103;
-2. native Windows 11 x64 NSIS install/relaunch/uninstall acceptance under #84 / draft PR #115;
+2. native Windows 11 x64 NSIS install/relaunch/uninstall acceptance under #84 / draft PR #115 (the beta-candidate package passed installed-app qualification in a disposable Windows Sandbox; evidence on PR #132, disposition pending);
 3. a fresh alpha convergence audit under Wayfinder #30;
 4. only then promotion of one already-authorized inference path with native evidence.
 
