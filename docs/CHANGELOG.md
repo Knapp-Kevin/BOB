@@ -47,7 +47,8 @@ All notable changes to the revived B.O.B. project are recorded here. This file d
 - established the accepted targeted-clean Windows NSIS packaging path to prevent stale native resource reuse;
 - produced reproducible hosted Windows package-build evidence while explicitly keeping native install acceptance separate;
 - retained issue #84 for the real Windows 11 x64 install/launch/relaunch/icon/uninstall/retained-user-data acceptance contract;
-- added draft PR #115 as separate native-smoke evidence tooling/runbook without representing that tooling as completed native acceptance.
+- added draft PR #115 as separate native-smoke evidence tooling/runbook without representing that tooling as completed native acceptance;
+- added the tag-triggered, owner-approved signed Windows release workflow (Azure Artifact Signing as MythologIQ Labs, LLC, fail-closed signature verification, SHA-256 file, draft GitHub Release); routine builds stay unsigned, and the first signed release waits on the one-time owner setup in `docs/PUBLIC_RELEASE.md`.
 
 ### Startup recovery
 

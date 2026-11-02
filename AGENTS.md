@@ -81,6 +81,10 @@ Run the checks that are relevant to the change, such as builds, unit tests, lint
 
 Repository CI is a safety net when present, not a substitute for implementation-time validation.
 
+## Windows code signing
+
+Distributed Windows binaries and installers are signed with the MythologIQ Labs Azure Artifact Signing profile under `MythologIQ-Labs-LLC/Myth-Tech-Forge` `docs/WINDOWS_CODE_SIGNING_STANDARD.md`. Sign release builds only, through `.github/workflows/release-windows.yml` after owner approval; never sign PR or routine CI builds. Do not call a build signed until `scripts/verify-windows-signature.ps1` passes. Never create signing identities, federated credentials or role assignments without owner approval, and never commit credentials. The release procedure is in `docs/PUBLIC_RELEASE.md`.
+
 ## Repository hygiene
 
 The repository root is intentionally sparse. Do not place implementation experiments, generated inventories, model artifacts, temporary scripts, screenshots, research dumps, or historical copies in the root.

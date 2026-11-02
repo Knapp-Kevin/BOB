@@ -140,13 +140,22 @@ Windows Sandbox is the local disposable host for that script. `scripts/new-windo
 
 Where host Smart App Control blocks the unsigned release build tools, `scripts/new-windows-sandbox-build.ps1` stages a separate build Sandbox. It maps a read-only `git archive` of a committed ref and an output folder, and keeps clipboard, printer, audio/video input and vGPU off. It keeps networking on to download the toolchain. Windows Installer waits a fixed ~120 s per package inside Windows Sandbox, so when the host already has the MSVC Build Tools and the Windows 10/11 SDK, the kit maps those two folders read-only and the build uses them in place. Otherwise `scripts/build-in-windows-sandbox.ps1` installs the Windows SDK (desktop x64 only) and the MSVC compiler from the Build Tools (both Authenticode-checked), which takes over an hour. It then installs Rust 1.88.0 and Node 22 (checksum-checked) from their official sources and runs `npm ci` and `npm run package:windows`. It records the installer, payload and target `bob.exe` hashes in `build-manifest.json` for the offline qualification kit.
 
+A signed release uses the same locked, targeted-clean path with the release-only config appended: `npm run package:windows -- --config src-tauri/tauri.release-windows.conf.json`. Only `.github/workflows/release-windows.yml` runs it; see [Code signing](#code-signing). Its acceptance adds: every signed file passes `scripts/verify-windows-signature.ps1`, the installed `bob.exe` is byte-identical to the signed build output, and the draft release carries the installer with its `.sha256`.
+
 MSI is deferred for the current alpha. It duplicates the installer surface and adds WiX/VBScript requirements without a current product requirement.
 
 macOS/Linux installers, cross-platform matrices, store publication, auto-update infrastructure, and broad release automation are deferred until a later release requires them.
 
 ## Code signing
 
-A clearly identified local/developer alpha may be built and reviewed before a production signing certificate exists. Broad external distribution must not be described as production-ready until the Windows signing/distribution policy is implemented and validated.
+B.O.B. follows `MythologIQ-Labs-LLC/Myth-Tech-Forge` `docs/WINDOWS_CODE_SIGNING_STANDARD.md`: distributed Windows binaries and installers are signed by **MythologIQ Labs, LLC** through Azure Artifact Signing, timestamped, and only for release builds.
+
+- `npm run package:windows` and every development, PR, qualification and Sandbox build stay **unsigned** and need no signing tools. The default `src-tauri/tauri.conf.json` has no signing configuration.
+- Release builds add `--config src-tauri/tauri.release-windows.conf.json`. Its `bundle.windows.signCommand` runs `scripts/sign-windows-release.ps1` for every file Tauri signs: `bob.exe`, the NSIS plugin DLLs, the uninstaller and the installer. The script takes the signing client from `BOB_SIGNING_CLIENT_DIR` and the Azure CLI sign-in, contains no machine-specific path, and fails the build when either is missing.
+- `scripts/verify-windows-signature.ps1` is the release gate. A file passes only if `signtool verify /pa` succeeds, the Authenticode status is Valid, the signer is exactly `MythologIQ Labs, LLC`, the signature is timestamped, and the chain ends at Microsoft Identity Verification Root Certificate Authority 2020. Do not call a build signed until it passes.
+- Signing in CI runs only in `.github/workflows/release-windows.yml`, for `v*` tags, after the owner approves the `release` environment. The procedure, version scheme and one-time owner setup are in `docs/PUBLIC_RELEASE.md`.
+
+Unsigned builds remain valid for engineering and controlled-alpha qualification; signing is not a prerequisite for those. An unsigned build must not be published as a GitHub release or broadly distributed, and Smart App Control hosts block it.
 
 ## Hosted CI boundary
 
