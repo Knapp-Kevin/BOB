@@ -124,7 +124,11 @@ jobs:
           if ($proc.ExitCode -ne 0) { throw "Silent install failed with exit code $($proc.ExitCode)." }
           $installed = Join-Path $installDir 'bob.exe'
           $uninstaller = Join-Path $installDir 'uninstall.exe'
-          if ((Get-FileHash $installed).Hash -ne (Get-FileHash $target).Hash) { throw 'The installed bob.exe differs from the signed build output.' }
+          # Tauri patches bob.exe while bundling, so the installed copy never matches
+          # target/release/bob.exe byte for byte. Both are signature-checked below;
+          # record both hashes as evidence instead of comparing them.
+          "target bob.exe    $((Get-FileHash $target).Hash)" | Tee-Object -FilePath release-evidence/hashes.txt
+          "installed bob.exe $((Get-FileHash $installed).Hash)" | Tee-Object -FilePath release-evidence/hashes.txt -Append
 
           # Tauri also signs the NSIS plugin DLLs it embeds in the installer.
           $plugins = @(Get-ChildItem src-tauri/target/release/nsis/x64/Plugins/x86-unicode -Recurse -Filter *.dll | ForEach-Object FullName)
