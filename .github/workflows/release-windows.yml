@@ -1,0 +1,170 @@
+name: Windows release
+
+# Builds, signs and verifies the Windows NSIS installer for a vMAJOR.MINOR.PATCH tag,
+# then attaches it with a SHA-256 file to a draft GitHub Release for the owner to
+# publish. It runs only for v* tags, never for branches or pull requests. Signing
+# happens only after the owner approves the `release` environment, which holds the
+# Azure OIDC sign-in. Development and PR builds stay unsigned and need no signing tools.
+# Procedure: docs/PUBLIC_RELEASE.md and MythologIQ-Labs-LLC/Myth-Tech-Forge
+# docs/WINDOWS_CODE_SIGNING_STANDARD.md.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    # Cheap Linux check before anyone is asked to approve the release environment.
+    name: Check tag matches the version manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@v4
+
+      - name: Compare the tag with every version manifest
+        run: node scripts/check-release-version.mjs "$GITHUB_REF_NAME"
+
+  installer:
+    name: Build, sign and verify (Windows)
+    needs: version
+    runs-on: windows-latest
+    timeout-minutes: 60
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      SIGNING_CLIENT_VERSION: "1.0.146"
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@v4
+
+      - name: Check the tag again on the release runner
+        shell: pwsh
+        run: |
+          node scripts/check-release-version.mjs "$env:GITHUB_REF_NAME"
+          if ($LASTEXITCODE -ne 0) { throw 'The tag does not match the version manifests.' }
+
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.88"
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Compiles the dependency graph before the Azure sign-in, so the sign-in only has
+      # to last through the targeted-clean packaging step below.
+      - name: Build the frontend for the warm-up
+        run: npm run build
+
+      - name: Warm the release build
+        run: cargo build --manifest-path src-tauri/Cargo.toml --release --locked
+
+      - name: Get the Artifact Signing client
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'signing-client'
+          $pkg = "$dir.zip"
+          Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.ArtifactSigning.Client/$env:SIGNING_CLIENT_VERSION" -OutFile $pkg
+          Expand-Archive $pkg -DestinationPath $dir
+          $sig = Get-AuthenticodeSignature (Join-Path $dir 'bin\x64\Azure.CodeSigning.Dlib.dll')
+          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+            throw "The signing client is not Microsoft-signed: $($sig.Status) $($sig.SignerCertificate.Subject)"
+          }
+          "BOB_SIGNING_CLIENT_DIR=$dir" >> $env:GITHUB_ENV
+
+      - name: Sign in to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Fetch the code signing token while the sign-in is fresh
+        shell: pwsh
+        run: |
+          az account get-access-token --resource https://codesigning.azure.net --query expiresOn --output tsv
+          if ($LASTEXITCODE -ne 0) { throw 'Could not get an Artifact Signing token.' }
+
+      # The documented locked, targeted-clean packaging path plus the release-only config,
+      # whose signCommand signs bob.exe, the NSIS installer and its uninstaller.
+      - name: Build and sign the NSIS installer
+        run: npm run package:windows -- --config src-tauri/tauri.release-windows.conf.json
+
+      - name: Verify the signatures
+        id: verify
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = "$env:GITHUB_REF_NAME".Substring(1)
+          $installers = @(Get-ChildItem src-tauri/target/release/bundle/nsis -Filter "*_${version}_x64-setup.exe")
+          if ($installers.Count -ne 1) { throw "Expected one $version NSIS installer, found $($installers.Count)." }
+          $installer = $installers[0]
+          $target = (Resolve-Path src-tauri/target/release/bob.exe).Path
+          New-Item -ItemType Directory -Force release-evidence | Out-Null
+
+          # The uninstaller exists only inside the installer, so install the package on
+          # this disposable runner and verify what it wrote.
+          $installDir = Join-Path $env:RUNNER_TEMP 'bob-installed'
+          $proc = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "Silent install failed with exit code $($proc.ExitCode)." }
+          $installed = Join-Path $installDir 'bob.exe'
+          $uninstaller = Join-Path $installDir 'uninstall.exe'
+          if ((Get-FileHash $installed).Hash -ne (Get-FileHash $target).Hash) { throw 'The installed bob.exe differs from the signed build output.' }
+
+          # Tauri also signs the NSIS plugin DLLs it embeds in the installer.
+          $plugins = @(Get-ChildItem src-tauri/target/release/nsis/x64/Plugins/x86-unicode -Recurse -Filter *.dll | ForEach-Object FullName)
+          if ($plugins.Count -eq 0) { throw 'No NSIS plugin DLLs found to verify.' }
+
+          ./scripts/verify-windows-signature.ps1 -Path (@($target, $installer.FullName, $installed, $uninstaller) + $plugins) *>&1 |
+            Tee-Object -FilePath release-evidence/signature-verification.txt
+          "installer=$($installer.FullName)" >> $env:GITHUB_OUTPUT
+          "name=$($installer.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Write the SHA-256 file
+        shell: pwsh
+        env:
+          INSTALLER: ${{ steps.verify.outputs.installer }}
+          INSTALLER_NAME: ${{ steps.verify.outputs.name }}
+        run: |
+          $hash = (Get-FileHash -LiteralPath $env:INSTALLER -Algorithm SHA256).Hash.ToLowerInvariant()
+          # LF line ending, so `sha256sum -c` also works outside Windows.
+          [IO.File]::WriteAllText("$env:INSTALLER.sha256", "$hash  $env:INSTALLER_NAME`n")
+          Get-Content -LiteralPath "$env:INSTALLER.sha256"
+
+      - name: Keep the verification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-evidence-${{ github.ref_name }}
+          path: release-evidence/
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Attach to a draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER: ${{ steps.verify.outputs.installer }}
+        run: |
+          $installer = $env:INSTALLER
+          $version = "$env:GITHUB_REF_NAME".Substring(1)
+          $notes = "Signed Windows 11 x64 installer for B.O.B. $version. Publisher: MythologIQ Labs, LLC. Check the download against the attached .sha256 file."
+          # 0.x versions are the Alpha Product, so they are marked as pre-releases.
+          $flags = @('--draft', '--verify-tag')
+          if ($version.StartsWith('0.')) { $flags += '--prerelease' }
+          gh release create "$env:GITHUB_REF_NAME" $installer "$installer.sha256" @flags --title "B.O.B. $version" --notes $notes
+          if ($LASTEXITCODE -ne 0) { throw 'Creating the draft release failed.' }
