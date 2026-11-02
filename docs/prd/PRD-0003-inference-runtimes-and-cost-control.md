@@ -68,6 +68,10 @@ The currently implemented cloud adapter is Gemini Developer API, retained as an 
 
 An optional, default-disabled OpenRouter Chat path is implemented as an explicitly enabled `metered` cloud capability; its boundary is defined in `docs/governance/AI_COST_AND_PROVIDER_POLICY.md`.
 
+Direct OpenAI API and Anthropic API Chat paths are implemented with the same `metered` cloud boundary: off by default, one approved model, persisted cloud and metered permissions, an OS-stored API key, a per-launch session grant, and no fallback to another provider.
+
+Claude CLI (`claude -p`) and Codex CLI (`codex exec`) adapters are implemented as bounded external processes with no tool, shell, filesystem, or repository authority in Assist mode, plus timeouts, cancellation, version and sign-in detection, and output validation. Their billing class is `unknown` because current vendor terms do not clearly allow a third-party app to drive a user's subscription through the CLI, so policy blocks them until the owner records a classification. Only one cloud Chat backend can be enabled at a time. Owner live-validation steps are in `docs/LIVE_INFERENCE_VALIDATION.md`.
+
 RFC-0002 defines the accepted provider-independent runtime contract. The Rust-owned runtime policy and a bounded non-user-facing Ollama tracer are implemented on `master`.
 
 Wayfinder #79 and resolved research #80/#81 establish the current direction:

@@ -161,3 +161,62 @@ export async function removeGeminiCredential(): Promise<GeminiCredentialStatus> 
   if (!isTauriRuntime()) return browserGeminiStatus;
   return invoke<GeminiCredentialStatus>("remove_gemini_credential");
 }
+
+export type AdapterId = "openai" | "anthropic" | "claude_cli" | "codex_cli";
+export type AdapterSettings = {
+  adapter: AdapterId;
+  billing: "metered" | "unknown";
+  modelId: string | null;
+  cloudEnabled: boolean;
+  meteredEnabled: boolean;
+  credentialConfigured: boolean;
+  chatSessionEnabled: boolean;
+};
+export type AdapterAuthorization = { modelId: string | null; cloudEnabled: boolean; meteredEnabled: boolean };
+export type CliRuntimeStatus = {
+  installed: boolean;
+  version: string | null;
+  authState: "ready" | "missing" | "unknown";
+  authMethod: string | null;
+  plan: string | null;
+};
+
+export async function loadAdapterSettings(): Promise<AdapterSettings[] | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<AdapterSettings[]>("adapter_settings");
+}
+
+export async function configureAdapterModel(adapter: AdapterId, settings: AdapterAuthorization): Promise<AdapterSettings[]> {
+  if (!isTauriRuntime()) throw new Error("Provider configuration requires the desktop application");
+  return invoke<AdapterSettings[]>("configure_adapter_model", { adapter, ...settings });
+}
+
+export async function setAdapterChatSession(adapter: AdapterId, enabled: boolean): Promise<AdapterSettings[]> {
+  if (!isTauriRuntime()) throw new Error("Provider Chat requires the desktop application");
+  return invoke<AdapterSettings[]>("set_adapter_chat_session", { adapter, enabled });
+}
+
+export async function configureAdapterCredential(adapter: AdapterId, apiKey: string): Promise<AdapterSettings[]> {
+  if (!isTauriRuntime()) throw new Error("Key storage requires the desktop application");
+  return invoke<AdapterSettings[]>("configure_adapter_credential", { adapter, apiKey });
+}
+
+export async function removeAdapterCredential(adapter: AdapterId): Promise<AdapterSettings[]> {
+  if (!isTauriRuntime()) throw new Error("Credential removal requires the desktop application");
+  return invoke<AdapterSettings[]>("remove_adapter_credential", { adapter });
+}
+
+export async function generateWithAdapter(adapter: AdapterId, prompt: string): Promise<string> {
+  if (!isTauriRuntime()) throw new Error("Provider inference requires the desktop application");
+  return invoke<string>("generate_with_adapter", { adapter, prompt });
+}
+
+export async function cancelAdapterGeneration(): Promise<boolean> {
+  if (!isTauriRuntime()) return false;
+  return invoke<boolean>("cancel_adapter_generation");
+}
+
+export async function loadCliRuntimeStatus(adapter: AdapterId): Promise<CliRuntimeStatus> {
+  if (!isTauriRuntime()) throw new Error("CLI detection requires the desktop application");
+  return invoke<CliRuntimeStatus>("adapter_runtime_status", { adapter });
+}

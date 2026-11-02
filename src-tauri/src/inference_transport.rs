@@ -5,6 +5,10 @@
 //! Selecting a model does not fix that upstream provider or its data policy, so
 //! every request restricts routing to providers that do not collect prompt data
 //! and never supplies alternate models.
+//!
+//! The OpenAI and Anthropic APIs are called directly at their fixed vendor
+//! endpoints with the same bounds: one approved model, one user message, no
+//! streaming, no tools, and a hard output-token cap.
 
 use crate::inference_policy::{InferenceAuthorization, InferenceProvider};
 use anyhow::{bail, Context, Result};
@@ -14,6 +18,9 @@ use std::time::Duration;
 
 const OPENROUTER_ENDPOINT: &str = "https://openrouter.ai/api/v1/chat/completions";
 const LM_STUDIO_ENDPOINT: &str = "http://127.0.0.1:1234/v1/chat/completions";
+const OPENAI_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";
+const ANTHROPIC_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_VERSION: &str = "2023-06-01";
 const TIMEOUT: Duration = Duration::from_secs(60);
 pub const MAX_PROMPT_BYTES: usize = 4_000;
 const MAX_RESPONSE_BYTES: usize = 64_000;
@@ -26,9 +33,42 @@ struct Request<'a> {
     model: &'a str,
     messages: [Message<'a>; 1],
     stream: bool,
-    max_tokens: u32,
+    // OpenAI's current Chat Completions API takes `max_completion_tokens`;
+    // OpenRouter and LM Studio take `max_tokens`. Exactly one is sent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    store: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     provider: Option<ProviderRouting>,
+}
+
+#[derive(Serialize)]
+struct AnthropicRequest<'a> {
+    model: &'a str,
+    max_tokens: u32,
+    messages: [Message<'a>; 1],
+    stream: bool,
+}
+
+#[derive(Deserialize)]
+struct AnthropicResponse {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    content: Vec<AnthropicBlock>,
+    #[serde(default)]
+    stop_reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct AnthropicBlock {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    text: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -66,6 +106,8 @@ pub struct InferenceTransport {
     local: Client,
     openrouter_endpoint: String,
     lm_studio_endpoint: String,
+    openai_endpoint: String,
+    anthropic_endpoint: String,
 }
 
 impl InferenceTransport {
@@ -90,13 +132,19 @@ impl InferenceTransport {
             local,
             openrouter_endpoint,
             lm_studio_endpoint,
+            openai_endpoint: OPENAI_ENDPOINT.into(),
+            anthropic_endpoint: ANTHROPIC_ENDPOINT.into(),
         })
     }
 
-    /// Test-only transport whose OpenRouter traffic goes to a local mock server.
+    /// Test-only transport whose cloud traffic (OpenRouter, OpenAI, Anthropic)
+    /// goes to a local mock server.
     #[cfg(test)]
-    pub(crate) fn for_test(openrouter_endpoint: String) -> Result<Self> {
-        let mut transport = Self::with_endpoints(openrouter_endpoint, LM_STUDIO_ENDPOINT.into())?;
+    pub(crate) fn for_test(cloud_endpoint: String) -> Result<Self> {
+        let mut transport =
+            Self::with_endpoints(cloud_endpoint.clone(), LM_STUDIO_ENDPOINT.into())?;
+        transport.openai_endpoint = cloud_endpoint.clone();
+        transport.anthropic_endpoint = cloud_endpoint;
         transport.cloud = Client::builder()
             .no_proxy()
             .redirect(Policy::none())
@@ -112,7 +160,7 @@ impl InferenceTransport {
         provider: InferenceProvider,
         model: &str,
         prompt: &str,
-        openrouter_api_key: Option<&str>,
+        api_key: Option<&str>,
     ) -> Result<String> {
         authorization
             .authorize(provider, model)
@@ -120,40 +168,64 @@ impl InferenceTransport {
         if prompt.trim().is_empty() || prompt.len() > MAX_PROMPT_BYTES {
             bail!("invalid inference prompt length");
         }
-
-        let (client, endpoint, routing) = match provider {
-            InferenceProvider::OpenRouter => (
-                &self.cloud,
-                self.openrouter_endpoint.as_str(),
-                Some(ProviderRouting {
-                    data_collection: "deny",
-                }),
-            ),
-            InferenceProvider::LmStudio => (&self.local, self.lm_studio_endpoint.as_str(), None),
-            InferenceProvider::Ollama => bail!("Ollama uses the existing local adapter"),
-        };
-        let key = if provider == InferenceProvider::OpenRouter {
-            Some(
-                openrouter_api_key
-                    .filter(|value| !value.trim().is_empty())
-                    .ok_or_else(|| anyhow::anyhow!("OpenRouter credential missing"))?,
-            )
-        } else {
-            None
-        };
-        let mut request = client.post(endpoint).json(&Request {
+        let messages = [Message {
+            role: "user",
+            content: prompt,
+        }];
+        let chat = |routing, openai: bool| Request {
             model,
             messages: [Message {
                 role: "user",
                 content: prompt,
             }],
             stream: false,
-            max_tokens: MAX_OUTPUT_TOKENS,
+            max_tokens: (!openai).then_some(MAX_OUTPUT_TOKENS),
+            max_completion_tokens: openai.then_some(MAX_OUTPUT_TOKENS),
+            store: openai.then_some(false),
             provider: routing,
-        });
-        if let Some(key) = key {
-            request = request.bearer_auth(key);
-        }
+        };
+        let required_key = || {
+            api_key
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| anyhow::anyhow!("inference provider credential missing"))
+        };
+
+        let request = match provider {
+            InferenceProvider::OpenRouter => self
+                .cloud
+                .post(&self.openrouter_endpoint)
+                .bearer_auth(required_key()?)
+                .json(&chat(
+                    Some(ProviderRouting {
+                        data_collection: "deny",
+                    }),
+                    false,
+                )),
+            InferenceProvider::OpenAi => self
+                .cloud
+                .post(&self.openai_endpoint)
+                .bearer_auth(required_key()?)
+                .json(&chat(None, true)),
+            InferenceProvider::Anthropic => self
+                .cloud
+                .post(&self.anthropic_endpoint)
+                .header("x-api-key", required_key()?)
+                .header("anthropic-version", ANTHROPIC_VERSION)
+                .json(&AnthropicRequest {
+                    model,
+                    max_tokens: MAX_OUTPUT_TOKENS,
+                    messages,
+                    stream: false,
+                }),
+            InferenceProvider::LmStudio => self
+                .local
+                .post(&self.lm_studio_endpoint)
+                .json(&chat(None, false)),
+            InferenceProvider::Ollama => bail!("Ollama uses the existing local adapter"),
+            InferenceProvider::ClaudeCli | InferenceProvider::CodexCli => {
+                bail!("CLI runtimes use the external-process adapter")
+            }
+        };
         // Error strings never include the request, headers, or credential.
         let mut response = request
             .send()
@@ -178,8 +250,31 @@ impl InferenceTransport {
             }
             bytes.extend_from_slice(&chunk);
         }
-        parse_response(&bytes)
+        if provider == InferenceProvider::Anthropic {
+            parse_anthropic_response(&bytes)
+        } else {
+            parse_response(&bytes)
+        }
     }
+}
+
+fn parse_anthropic_response(bytes: &[u8]) -> Result<String> {
+    let parsed: AnthropicResponse =
+        serde_json::from_slice(bytes).map_err(|_| anyhow::anyhow!("invalid inference response"))?;
+    if parsed.kind != "message" {
+        bail!("inference provider reported an error");
+    }
+    if parsed.stop_reason.as_deref() == Some("refusal") {
+        bail!("inference provider declined the request");
+    }
+    let output: String = parsed
+        .content
+        .into_iter()
+        .filter(|block| block.kind == "text")
+        .filter_map(|block| block.text)
+        .collect();
+    validate_generated_text(&output)?;
+    Ok(output)
 }
 
 fn parse_response(bytes: &[u8]) -> Result<String> {
@@ -276,6 +371,18 @@ pub(crate) mod mock {
             }
         }
         String::from_utf8_lossy(&data).into_owned()
+    }
+
+    pub fn anthropic_message(content: &str) -> String {
+        serde_json::json!({
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-test-5",
+            "content": [{ "type": "text", "text": content }],
+            "stop_reason": "end_turn"
+        })
+        .to_string()
     }
 
     pub fn completion(content: &str) -> String {
@@ -375,6 +482,7 @@ mod tests {
         assert_eq!(body["model"], MODEL);
         assert_eq!(body["stream"], false);
         assert_eq!(body["max_tokens"], MAX_OUTPUT_TOKENS);
+        assert!(body.get("max_completion_tokens").is_none());
         assert_eq!(body["provider"]["data_collection"], "deny");
         assert!(body.get("models").is_none(), "no alternate model fallback");
         assert!(body.get("route").is_none());
@@ -437,5 +545,144 @@ mod tests {
         let transport = InferenceTransport::new().unwrap();
         assert_eq!(transport.openrouter_endpoint, OPENROUTER_ENDPOINT);
         assert!(OPENROUTER_ENDPOINT.starts_with("https://openrouter.ai/"));
+        assert_eq!(transport.openai_endpoint, OPENAI_ENDPOINT);
+        assert!(OPENAI_ENDPOINT.starts_with("https://api.openai.com/"));
+        assert_eq!(transport.anthropic_endpoint, ANTHROPIC_ENDPOINT);
+        assert!(ANTHROPIC_ENDPOINT.starts_with("https://api.anthropic.com/"));
+    }
+
+    fn vendor_authorized() -> InferenceAuthorization {
+        let mut authorization = InferenceAuthorization {
+            cloud_enabled: true,
+            metered_enabled: true,
+            ..Default::default()
+        };
+        authorization.openai_models.insert("gpt-test-mini".into());
+        authorization
+            .anthropic_models
+            .insert("claude-test-5".into());
+        authorization
+    }
+
+    fn run_vendor(
+        transport: &InferenceTransport,
+        authorization: &InferenceAuthorization,
+        provider: InferenceProvider,
+        prompt: &str,
+        key: Option<&str>,
+    ) -> Result<String> {
+        let model = match provider {
+            InferenceProvider::OpenAi => "gpt-test-mini",
+            _ => "claude-test-5",
+        };
+        tauri::async_runtime::block_on(transport.generate(
+            authorization,
+            provider,
+            model,
+            prompt,
+            key,
+        ))
+    }
+
+    #[test]
+    fn openai_request_is_bounded_unstored_and_bearer_authenticated() {
+        let server = serve(200, completion("One small step."));
+        let transport = InferenceTransport::for_test(server.endpoint.clone()).unwrap();
+        let reply = run_vendor(
+            &transport,
+            &vendor_authorized(),
+            InferenceProvider::OpenAi,
+            "Help me start",
+            Some(KEY),
+        )
+        .unwrap();
+        assert_eq!(reply, "One small step.");
+        let requests = server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        let raw = &requests[0];
+        assert!(raw
+            .to_ascii_lowercase()
+            .contains(&format!("authorization: bearer {KEY}")));
+        let body: serde_json::Value =
+            serde_json::from_str(raw.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(body["model"], "gpt-test-mini");
+        assert_eq!(body["max_completion_tokens"], MAX_OUTPUT_TOKENS);
+        assert!(body.get("max_tokens").is_none());
+        assert_eq!(body["store"], false);
+        assert_eq!(body["stream"], false);
+        assert!(body.get("tools").is_none());
+        assert!(body.get("provider").is_none());
+    }
+
+    #[test]
+    fn anthropic_request_uses_messages_api_headers_and_parses_text_blocks() {
+        let server = serve(200, mock::anthropic_message("Pick one thing."));
+        let transport = InferenceTransport::for_test(server.endpoint.clone()).unwrap();
+        let reply = run_vendor(
+            &transport,
+            &vendor_authorized(),
+            InferenceProvider::Anthropic,
+            "Help me start",
+            Some(KEY),
+        )
+        .unwrap();
+        assert_eq!(reply, "Pick one thing.");
+        let requests = server.requests.lock().unwrap();
+        let raw = requests[0].to_ascii_lowercase();
+        assert!(raw.contains(&format!("x-api-key: {KEY}")));
+        assert!(raw.contains("anthropic-version: 2023-06-01"));
+        assert!(!raw.contains("authorization: bearer"));
+        let body: serde_json::Value =
+            serde_json::from_str(requests[0].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(body["model"], "claude-test-5");
+        assert_eq!(body["max_tokens"], MAX_OUTPUT_TOKENS);
+        assert_eq!(body["messages"][0]["role"], "user");
+        assert!(body.get("tools").is_none());
+        assert!(body.get("system").is_none());
+    }
+
+    #[test]
+    fn vendor_requests_are_denied_before_network_without_full_authorization() {
+        let server = serve(200, completion("unused"));
+        let transport = InferenceTransport::for_test(server.endpoint.clone()).unwrap();
+        let mut no_metered = vendor_authorized();
+        no_metered.metered_enabled = false;
+        let mut no_cloud = vendor_authorized();
+        no_cloud.cloud_enabled = false;
+        for provider in [InferenceProvider::OpenAi, InferenceProvider::Anthropic] {
+            for authorization in [&InferenceAuthorization::default(), &no_metered, &no_cloud] {
+                assert!(run_vendor(&transport, authorization, provider, "hi", Some(KEY)).is_err());
+            }
+            assert!(run_vendor(&transport, &vendor_authorized(), provider, "hi", None).is_err());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(server.requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn vendor_failures_and_malformed_output_are_rejected_without_leaking_key() {
+        let cases = [
+            (InferenceProvider::OpenAi, 401, "{\"error\":{\"message\":\"bad key\"}}".to_owned()),
+            (InferenceProvider::OpenAi, 429, "{}".to_owned()),
+            (InferenceProvider::OpenAi, 200, "not json".to_owned()),
+            (InferenceProvider::Anthropic, 401, "{\"type\":\"error\"}".to_owned()),
+            (InferenceProvider::Anthropic, 529, "{}".to_owned()),
+            (InferenceProvider::Anthropic, 200, "{\"type\":\"error\",\"error\":{}}".to_owned()),
+            (InferenceProvider::Anthropic, 200, "{\"type\":\"message\",\"content\":[]}".to_owned()),
+            (
+                InferenceProvider::Anthropic,
+                200,
+                "{\"type\":\"message\",\"content\":[{\"type\":\"text\",\"text\":\"no\"}],\"stop_reason\":\"refusal\"}".to_owned(),
+            ),
+            (InferenceProvider::Anthropic, 200, mock::anthropic_message(&"z".repeat(MAX_GENERATION_BYTES + 1))),
+        ];
+        for (provider, status, body) in cases {
+            let server = serve(status, body);
+            let transport = InferenceTransport::for_test(server.endpoint.clone()).unwrap();
+            let error = run_vendor(&transport, &vendor_authorized(), provider, "hi", Some(KEY))
+                .unwrap_err();
+            let message = format!("{error:#} {error:?}");
+            assert!(!message.contains(KEY), "credential leaked: {message}");
+        }
     }
 }

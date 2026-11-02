@@ -6,11 +6,17 @@ use zeroize::Zeroizing;
 const SERVICE_NAME: &str = "com.mythologiq.bob";
 const GEMINI_ACCOUNT: &str = "gemini-api-key";
 const OPENROUTER_ACCOUNT: &str = "openrouter-api-key";
+const OPENAI_ACCOUNT: &str = "openai-api-key";
+const ANTHROPIC_ACCOUNT: &str = "anthropic-api-key";
 
+// Every protected credential B.O.B. stores is an API key; the shared suffix is accurate.
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy)]
 pub enum SecretName {
     GeminiApiKey,
     OpenRouterApiKey,
+    OpenAiApiKey,
+    AnthropicApiKey,
 }
 
 impl SecretName {
@@ -18,6 +24,8 @@ impl SecretName {
         match self {
             Self::GeminiApiKey => GEMINI_ACCOUNT,
             Self::OpenRouterApiKey => OPENROUTER_ACCOUNT,
+            Self::OpenAiApiKey => OPENAI_ACCOUNT,
+            Self::AnthropicApiKey => ANTHROPIC_ACCOUNT,
         }
     }
 }

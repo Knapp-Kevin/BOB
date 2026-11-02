@@ -78,6 +78,10 @@ impl OpenRouterCredentials {
         }
     }
 
+    pub(crate) fn chat_session_active(&self) -> Result<bool> {
+        Ok(self.session_model()?.is_some())
+    }
+
     fn session_model(&self) -> Result<Option<String>> {
         self.session
             .lock()
@@ -206,8 +210,13 @@ pub fn configure_openrouter_model(
 pub fn set_openrouter_chat_session(
     store: State<'_, Store>,
     credentials: State<'_, OpenRouterCredentials>,
+    adapters: State<'_, crate::adapters::Adapters>,
     enabled: bool,
 ) -> std::result::Result<OpenRouterSettings, String> {
+    // Only one cloud Chat backend may hold a session grant at a time.
+    if enabled && adapters.active_session().is_some() {
+        return Err("another cloud Chat backend is enabled; turn it off first".into());
+    }
     credentials
         .set_session(&store, enabled)
         .map_err(|error| error.to_string())?;

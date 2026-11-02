@@ -1,5 +1,7 @@
+mod adapters;
 mod agent;
 mod backup;
+mod cli_runtime;
 mod export;
 mod gemini;
 pub mod inference_policy;
@@ -56,6 +58,7 @@ pub fn run() {
             app.manage(store);
             app.manage(gemini);
             app.manage(openrouter::OpenRouterCredentials::new());
+            app.manage(adapters::Adapters::new());
             // The main window is not created at startup (tauri.conf.json). Building it
             // only once the canonical Store is open and valid means a failed or losing
             // launch never starts a webview that could show sample fixtures or contend
@@ -98,6 +101,14 @@ pub fn run() {
             openrouter::openrouter_credential_status,
             openrouter::configure_openrouter_credential,
             openrouter::remove_openrouter_credential,
+            adapters::adapter_settings,
+            adapters::configure_adapter_model,
+            adapters::set_adapter_chat_session,
+            adapters::configure_adapter_credential,
+            adapters::remove_adapter_credential,
+            adapters::generate_with_adapter,
+            adapters::cancel_adapter_generation,
+            adapters::adapter_runtime_status,
             gemini::generate_gemini_context
         ])
         .run(tauri::generate_context!())

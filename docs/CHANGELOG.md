@@ -29,7 +29,8 @@ All notable changes to the revived B.O.B. project are recorded here. This file d
 - implemented Rust-owned fail-closed runtime policy;
 - implemented a bounded non-user-facing Ollama tracer behind the runtime contract;
 - resolved the current account-backed-provider research boundary and the B.O.B.-owned `LocalRuntimeAdapter` direction through Wayfinder #79/#80/#81;
-- preserved deterministic B.O.B. operation with no inference configured and no silent paid/provider/model fallback.
+- preserved deterministic B.O.B. operation with no inference configured and no silent paid/provider/model fallback;
+- added default-off OpenAI API and Anthropic API Chat adapters (`metered`, OS-stored keys, per-launch session grant) and Claude CLI / Codex CLI adapters (bounded external processes, billing `unknown` and therefore blocked until the owner classifies them), with schema v6 `adapter_settings` and a one-cloud-backend-at-a-time rule.
 
 ### Calm primary workflow
 

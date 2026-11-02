@@ -144,6 +144,19 @@ Claude Code, Codex, Antigravity, or another future runtime may be supported only
 
 B.O.B. does not reuse private credentials, scrape proprietary sessions, or make any one vendor client mandatory.
 
+Implemented CLI adapters (`src-tauri/src/cli_runtime.rs`, `src-tauri/src/adapters.rs`):
+
+- identity and health: the executable is found only on absolute `PATH` entries; `--version` gives the runtime version;
+- authentication: mechanism `account_session` or `api_key`, state `ready`, `missing`, or `unknown`, from `claude auth status --json` or `codex login status`, with identity fields discarded;
+- billing `unknown` and locality `cloud` for both, so invocation fails closed before any process starts until reclassified;
+- invocation: the prompt goes on stdin into an empty scratch folder; Claude Code runs with all tools disabled and customizations off, and Codex runs in its read-only sandbox with B.O.B. killing the process on any tool event;
+- cancellation and timeout: the whole process tree is killed (120 seconds, or a user stop);
+- normalized failures: not installed, unauthenticated, timeout, cancelled, invalid output, tool use attempted, execution failure.
+
+### Direct vendor APIs
+
+OpenAI (`chat/completions`) and Anthropic (Messages API, `x-api-key` and `anthropic-version: 2023-06-01`) adapters use API keys in the OS credential store, report `metered` billing and `cloud` locality, and share the OpenRouter transport bounds. They are reached only through fixed vendor endpoints.
+
 ### B.O.B.-native local runtime
 
 The first-party local seam is a B.O.B.-owned `LocalRuntimeAdapter`. Current #81 research supports an in-process Rust implementation initially backed by `mistralrs`, with GGUF as the first intentionally supported package format.

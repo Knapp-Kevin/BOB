@@ -81,6 +81,41 @@ OpenRouter is classified `metered` and `cloud`. It is disabled by default and re
 
 Choosing an OpenRouter model does not fix the upstream host that serves it, nor that host's data policy. B.O.B. never sends alternate models, and every request sets `provider.data_collection = "deny"` so OpenRouter routes only to hosts that do not collect prompt data. Requests are bounded to 4,000 prompt bytes and 512 output tokens. A failed OpenRouter request falls back to B.O.B.'s deterministic local guidance, never to another provider.
 
+## Implemented adapter classifications
+
+| Adapter | Surface | Billing class | Locality | State |
+| --- | --- | --- | --- | --- |
+| Gemini Developer API | API key | `free` (Free Tier boundary below) | `cloud` | advanced optional |
+| OpenRouter | API key, `chat/completions` | `metered` | `cloud` | optional, default off |
+| OpenAI API | API key, `https://api.openai.com/v1/chat/completions` | `metered` | `cloud` | optional, default off |
+| Anthropic API | API key, `https://api.anthropic.com/v1/messages` | `metered` | `cloud` | optional, default off |
+| Claude CLI | `claude -p` (Claude Code), user's own CLI sign-in | `unknown` | `cloud` | implemented, **blocked** by policy |
+| Codex CLI | `codex exec`, user's own CLI sign-in | `unknown` | `cloud` | implemented, **blocked** by policy |
+| Ollama / LM Studio | loopback runtime | `local` (per route) | `loopback_local` | non-user-facing tracer |
+
+## Direct-vendor API boundary (OpenAI, Anthropic)
+
+The OpenAI and Anthropic API adapters follow the OpenRouter boundary exactly: disabled by default; one exact user-entered model ID (plain ID, no `/` route prefix, no leading `-`); separate persisted cloud-transmission and metered-billing permissions; an API key held only in the operating-system credential store; and a Rust-held, in-memory Chat session grant that starts empty on every launch, is bound to the approved model, and is revoked by any model, permission, or credential change. Requests go only to the fixed vendor endpoint, carry one user message, no tools, no streaming, and at most 512 output tokens and 4,000 prompt bytes. OpenAI requests set `store: false`. A failed request falls back to deterministic local guidance, never to another provider.
+
+At most one cloud Chat backend (OpenRouter, OpenAI, Anthropic, Claude CLI, or Codex CLI) may hold a session grant at a time. Enabling a second one is refused until the first is turned off, so the backend never changes silently.
+
+B.O.B. has no budget ceiling of its own. The spending limit for a metered API key is set in the vendor console (see `docs/LIVE_INFERENCE_VALIDATION.md`).
+
+## Vendor CLI boundary (Claude CLI, Codex CLI)
+
+B.O.B. runs the unmodified vendor CLI as an external process, signed in through the vendor's own login flow. B.O.B. never reads, stores, or forwards the CLI's credentials. In Assist mode:
+
+- Claude Code runs as `claude -p --output-format json --tools "" --safe-mode --strict-mcp-config --no-session-persistence --permission-mode dontAsk` with a short B.O.B. system prompt: every built-in tool is disabled, and hooks, plugins, MCP servers, and `CLAUDE.md` are off.
+- Codex runs as `codex exec --sandbox read-only --skip-git-repo-check --ephemeral --ignore-user-config --ignore-rules --json`. Codex has no flag that removes its read-only command tool, so B.O.B. kills the process the moment its event stream reports any command, file-change, MCP, or web-search item. This restriction gap is surfaced here, per ADR-0005.
+- Both run in an empty per-request scratch folder, receive the prompt on stdin (never as an argument), are killed with their whole process tree after 120 seconds or on user cancellation, and have stdout bounded to 256 KB. Only validated reply text reaches Chat; raw CLI output and errors never reach the frontend.
+
+**Billing classification is `unknown` for both CLIs, so the policy blocks them before any process starts.** Basis, checked 2026-11-02:
+
+- Anthropic, Claude Code "Legal and compliance" (`https://code.claude.com/docs/en/legal-and-compliance`): OAuth sign-in "is designed to support ordinary use of Claude Code and other native Anthropic applications"; Anthropic "does not permit third-party developers to ... route requests through Free, Pro, Max, or Ultra plan credentials on behalf of their users"; running Claude Code "in your products or services" requires the Commercial Terms; the page also says it does not "prevent an end user from signing in to the unmodified Claude Code binary with their own Claude subscription". That is not a clear allowance for a third-party desktop app to drive a user's subscription, and an API-key or extra-usage login is metered.
+- OpenAI, Codex authentication docs (`https://learn.chatgpt.com/docs/auth`, redirected from `developers.openai.com/codex/auth`): "Use API key authentication for programmatic Codex CLI workflows" and "API keys are still the recommended default for automation"; nothing addresses third-party applications using ChatGPT-plan sign-in. API-key sign-in "uses standard API pricing".
+
+Reclassifying either CLI to `subscription` or `metered` is an owner decision recorded in this document and in `CLAUDE_CLI_BILLING` / `CODEX_CLI_BILLING` (`src-tauri/src/inference_policy.rs`). A `metered` classification would also require the metered permission. Version and sign-in detection (`--version`, `claude auth status --json`, `codex login status`) never sends a prompt and reports only the auth method and plan tier, never an email, organization, or token.
+
 ## Provider verification
 
 Adapter documentation must identify the supported vendor surface being used and the basis for its billing classification. When vendor terms, quota, eligibility, privacy/data-use policy, or product behavior changes, the classification must be re-verified before documentation continues to claim free, subscription-backed, or otherwise included use.

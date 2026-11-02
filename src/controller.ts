@@ -1,6 +1,7 @@
 import { activeItem, applyPlanProjection, escapeHtml, focusItems, hydratePersistentWorkState, showToast, state, type ItemKind, type ReplanResult, type Route, type SetupStep } from "./model";
 import { generateWithOpenRouter, appendChatMessage, clearChatHistory, applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, resumeDeferredTask, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
 import { renderShell } from "./views";
+import { activeAdapter, adapterFailureMessage, bindAdapterControls, generateWithActiveAdapter, refreshAdapters } from "./adapters_ui";
 import { saveOpenRouterAuthorization, saveOpenRouterKey, removeOpenRouterKey, openRouterChatEnabled, openRouterFailureMessage, refreshOpenRouter, setOpenRouterChatEnabled } from "./openrouter_ui";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
@@ -98,7 +99,23 @@ function pushConversation(text: string) {
     render();
     let response: string;
     try {
-      if (openRouterChatEnabled) {
+      const adapter = activeAdapter()?.adapter;
+      if (adapter) {
+        if (chatByteLength(text) > 4_000) {
+          showToast("Cloud providers accept up to 4,000 UTF-8 bytes per prompt. Nothing was sent to the provider.");
+          response = "That request is too long for the selected cloud model. Shorten it or turn off the provider in Settings.";
+        } else {
+          try {
+            response = await generateWithActiveAdapter(adapter, text);
+          } catch (error) {
+            console.error("Provider inference unavailable", error);
+            showToast(`${adapterFailureMessage(adapter, error)} B.O.B. is using local guidance for this response.`);
+            // Resynchronize with the backend grant, which may have been revoked.
+            await refreshAdapters();
+            response = (await assistWithBob(text)) ?? replyFor(text);
+          }
+        }
+      } else if (openRouterChatEnabled) {
         if (chatByteLength(text) > 4_000) {
           showToast("OpenRouter accepts up to 4,000 UTF-8 bytes per prompt. Nothing was sent to the provider.");
           response = "That request is too long for the selected cloud model. Shorten it or turn off OpenRouter in Settings.";
@@ -384,6 +401,7 @@ function bindEvents() {
       });
   });
 
+  bindAdapterControls(render);
   document.querySelector("#openrouter-chat")?.addEventListener("change", (event) => {
     const enabled = (event.target as HTMLInputElement).checked;
     if (enabled && !window.confirm("Send your Chat prompts to your approved OpenRouter model? Usage may incur separate charges. This only applies to this app session.")) {
