@@ -33,7 +33,7 @@ Every Windows installer B.O.B. distributes is Authenticode-signed by **MythologI
 
 ### Version scheme
 
-Releases use SemVer core versions, tagged `vMAJOR.MINOR.PATCH` (for example `v0.1.0`), with no pre-release suffix. While B.O.B. is an Alpha Product the major version stays `0`: MINOR rises for a release that changes user-facing capability, PATCH for a fix-only release. Every `0.x` release is marked as a GitHub pre-release. The first signed beta is planned as `v0.1.0`; the manifests currently say `0.0.1`.
+Releases use SemVer core versions, tagged `vMAJOR.MINOR.PATCH` (for example `v0.1.0`), with no pre-release suffix. While B.O.B. is an Alpha Product the major version stays `0`: MINOR rises for a release that changes user-facing capability, PATCH for a fix-only release. Every `0.x` release is marked as a GitHub pre-release. The first signed release is `v0.1.0`, an alpha pre-release.
 
 The tag must equal the version in all of `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and the `bob` entry of `src-tauri/Cargo.lock`. `scripts/check-release-version.mjs` enforces this before anyone is asked to approve signing, and again on the release runner.
 

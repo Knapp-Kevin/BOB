@@ -1,6 +1,6 @@
 [package]
 name = "bob"
-version = "0.0.1"
+version = "0.1.0"
 description = "B.O.B. | Better Organized Brain"
 authors = ["Kevin Knapp"]
 edition = "2021"
