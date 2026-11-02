@@ -17,8 +17,9 @@ export async function appendChatMessage(entry: { author: "user" | "bob"; text: s
   return invoke("append_chat_message", { entry });
 }
 
-export type OpenRouterAuthorization = { modelId: string | null; cloudEnabled: boolean; meteredEnabled: boolean };
-export type OpenRouterSettings = OpenRouterAuthorization & { chatSessionEnabled: boolean };
+export type OpenRouterAuthorization = { modelId: string | null; cloudEnabled: boolean; meteredEnabled: boolean; freeOnly: boolean; monthlyCapUsd: number | null };
+export type OpenRouterKeyStatus = { limit: number | null; limitRemaining: number | null; usageMonthly: number | null; freeRequestsRemainingToday: number | null };
+export type OpenRouterSettings = Omit<OpenRouterAuthorization, "monthlyCapUsd"> & { chatSessionEnabled: boolean; monthlyCapMicros: number | null; spentThisMonthMicros: number; suggestedMonthlyCapMicros: number };
 export type OpenRouterCredentialStatus = { configured: boolean };
 
 export async function loadOpenRouterSettings(): Promise<OpenRouterSettings | null> {
@@ -31,8 +32,15 @@ export async function configureOpenRouterModel(settings: OpenRouterAuthorization
   return invoke<OpenRouterSettings>("configure_openrouter_model", {
     modelId: settings.modelId,
     cloudEnabled: settings.cloudEnabled,
-    meteredEnabled: settings.meteredEnabled
+    meteredEnabled: settings.meteredEnabled,
+    freeOnly: settings.freeOnly,
+    monthlyCapUsd: settings.monthlyCapUsd
   });
+}
+
+export async function loadOpenRouterKeyStatus(): Promise<OpenRouterKeyStatus> {
+  if (!isTauriRuntime()) throw new Error("OpenRouter key status requires the desktop application");
+  return invoke<OpenRouterKeyStatus>("openrouter_key_status");
 }
 
 export async function setOpenRouterChatSession(enabled: boolean): Promise<OpenRouterSettings> {
@@ -160,4 +168,64 @@ export async function configureGeminiCredential(apiKey: string): Promise<GeminiC
 export async function removeGeminiCredential(): Promise<GeminiCredentialStatus> {
   if (!isTauriRuntime()) return browserGeminiStatus;
   return invoke<GeminiCredentialStatus>("remove_gemini_credential");
+}
+
+export type AdapterId = "openai" | "anthropic";
+export type AdapterSettings = {
+  adapter: AdapterId;
+  modelId: string | null;
+  cloudEnabled: boolean;
+  meteredEnabled: boolean;
+  credentialConfigured: boolean;
+  chatSessionEnabled: boolean;
+  monthlyCapMicros: number | null;
+  inputPriceMicros: number | null;
+  outputPriceMicros: number | null;
+  spentThisMonthMicros: number;
+  suggestedMonthlyCapMicros: number;
+};
+export type AdapterAuthorization = {
+  modelId: string | null;
+  cloudEnabled: boolean;
+  meteredEnabled: boolean;
+  monthlyCapUsd: number | null;
+  inputPriceUsd: number | null;
+  outputPriceUsd: number | null;
+};
+export type ProviderPage = "openrouter_keys" | "openrouter_free_models" | "openai_keys" | "openai_limits" | "openai_pricing" | "anthropic_keys" | "anthropic_limits" | "anthropic_pricing";
+
+/** Opens a fixed provider setup page in the default browser. */
+export async function openProviderPage(page: ProviderPage): Promise<void> {
+  if (!isTauriRuntime()) throw new Error("Opening provider pages requires the desktop application");
+  await invoke("open_provider_page", { page });
+}
+
+export async function loadAdapterSettings(): Promise<AdapterSettings[] | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<AdapterSettings[]>("adapter_settings");
+}
+
+export async function configureAdapterModel(adapter: AdapterId, settings: AdapterAuthorization): Promise<AdapterSettings[]> {
+  if (!isTauriRuntime()) throw new Error("Provider configuration requires the desktop application");
+  return invoke<AdapterSettings[]>("configure_adapter_model", { adapter, authorization: settings });
+}
+
+export async function setAdapterChatSession(adapter: AdapterId, enabled: boolean): Promise<AdapterSettings[]> {
+  if (!isTauriRuntime()) throw new Error("Provider Chat requires the desktop application");
+  return invoke<AdapterSettings[]>("set_adapter_chat_session", { adapter, enabled });
+}
+
+export async function configureAdapterCredential(adapter: AdapterId, apiKey: string): Promise<AdapterSettings[]> {
+  if (!isTauriRuntime()) throw new Error("Key storage requires the desktop application");
+  return invoke<AdapterSettings[]>("configure_adapter_credential", { adapter, apiKey });
+}
+
+export async function removeAdapterCredential(adapter: AdapterId): Promise<AdapterSettings[]> {
+  if (!isTauriRuntime()) throw new Error("Credential removal requires the desktop application");
+  return invoke<AdapterSettings[]>("remove_adapter_credential", { adapter });
+}
+
+export async function generateWithAdapter(adapter: AdapterId, prompt: string): Promise<string> {
+  if (!isTauriRuntime()) throw new Error("Provider inference requires the desktop application");
+  return invoke<string>("generate_with_adapter", { adapter, prompt });
 }

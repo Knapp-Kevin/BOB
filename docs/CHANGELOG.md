@@ -29,7 +29,10 @@ All notable changes to the revived B.O.B. project are recorded here. This file d
 - implemented Rust-owned fail-closed runtime policy;
 - implemented a bounded non-user-facing Ollama tracer behind the runtime contract;
 - resolved the current account-backed-provider research boundary and the B.O.B.-owned `LocalRuntimeAdapter` direction through Wayfinder #79/#80/#81;
-- preserved deterministic B.O.B. operation with no inference configured and no silent paid/provider/model fallback.
+- preserved deterministic B.O.B. operation with no inference configured and no silent paid/provider/model fallback;
+- added default-off OpenAI API and Anthropic API Chat adapters (`metered`, OS-stored keys, per-launch session grant), with schema v6 `adapter_settings` and a one-cloud-backend-at-a-time rule;
+- recorded the owner decision that B.O.B. is API-only: vendor agent CLIs (Claude Code, Codex) are out of scope;
+- added spending safeguards: OpenRouter defaults to free models only (zero `max_price` on every request, session revoked on any reported charge); every metered provider requires a B.O.B. monthly spending limit (pre-filled at $20) enforced by a per-month spend ledger (schema v7); paid OpenRouter use also needs a capped key; Settings opens each provider's key, limit, and pricing pages directly.
 
 ### Calm primary workflow
 

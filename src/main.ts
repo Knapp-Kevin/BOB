@@ -1,5 +1,6 @@
 import "./styles.css";
 import { refreshOpenRouter } from "./openrouter_ui";
+import { refreshAdapters } from "./adapters_ui";
 import { render } from "./controller";
 import { applyAccessibilityPreferences, applyPlanProjection, hydratePersistentWorkState, state } from "./model";
 import { loadAccessibilityPreferences, loadChatHistory, loadGeminiCredentialStatus, loadPersistentWorkState, planRemainingWork } from "./native";
@@ -25,6 +26,7 @@ async function bootstrap() {
   }
 
   void refreshOpenRouter().finally(render);
+  void refreshAdapters().finally(render);
   installAccessibilityPreferencePersistence();
   render();
 

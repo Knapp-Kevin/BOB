@@ -43,6 +43,7 @@ flowchart TB
 | Understand implementation order and current acceptance gates | [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) |
 | Understand release sequencing | [`ROADMAP.md`](ROADMAP.md) |
 | Understand native/product validation requirements | [`VALIDATION.md`](VALIDATION.md) |
+| Add provider keys and confirm each cloud inference adapter in the installed app | [`LIVE_INFERENCE_VALIDATION.md`](LIVE_INFERENCE_VALIDATION.md) |
 | Trace requirements to decisions and implementation authority | [`TRACEABILITY.md`](TRACEABILITY.md) |
 | Propose or review user-facing requirements | [`prd/`](prd/) |
 | Propose or review a significant implementation mechanism | [`rfc/`](rfc/) |
