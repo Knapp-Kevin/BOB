@@ -2,7 +2,9 @@
 
 All notable changes to the revived B.O.B. project are recorded here. This file describes the active revival line, not every historical prototype experiment.
 
-## Unreleased
+## 0.1.0 (alpha pre-release)
+
+First signed Windows release. Includes everything below; nothing has been released before it.
 
 ### Product-stage classification
 
