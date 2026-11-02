@@ -70,7 +70,7 @@ An optional, default-disabled OpenRouter Chat path is implemented as an explicit
 
 Direct OpenAI API and Anthropic API Chat paths are implemented with the same `metered` cloud boundary: off by default, one approved model, persisted cloud and metered permissions, an OS-stored API key, a per-launch session grant, and no fallback to another provider.
 
-Claude CLI (`claude -p`) and Codex CLI (`codex exec`) adapters are implemented as bounded external processes with no tool, shell, filesystem, or repository authority in Assist mode, plus timeouts, cancellation, version and sign-in detection, and output validation. Their billing class is `unknown` because current vendor terms do not clearly allow a third-party app to drive a user's subscription through the CLI, so policy blocks them until the owner records a classification. Only one cloud Chat backend can be enabled at a time. Owner live-validation steps are in `docs/LIVE_INFERENCE_VALIDATION.md`.
+B.O.B. is API-only: vendor agent CLIs such as Claude Code and Codex are out of scope by owner decision (2026-11-02), because current vendor terms do not clearly allow a third-party app to drive a user's subscription through them and they are separate agents rather than model capabilities. Only one cloud Chat backend can be enabled at a time. Owner live-validation steps are in `docs/LIVE_INFERENCE_VALIDATION.md`.
 
 RFC-0002 defines the accepted provider-independent runtime contract. The Rust-owned runtime policy and a bounded non-user-facing Ollama tracer are implemented on `master`.
 

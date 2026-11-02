@@ -98,32 +98,24 @@ Known limits: OpenRouter rate-limits `:free` models (20 per minute; 50 per day b
 | OpenRouter | API key, `chat/completions` | `metered`, or `free` in free-only mode | `cloud` | optional, default off |
 | OpenAI API | API key, `https://api.openai.com/v1/chat/completions` | `metered` | `cloud` | optional, default off |
 | Anthropic API | API key, `https://api.anthropic.com/v1/messages` | `metered` | `cloud` | optional, default off |
-| Claude CLI | `claude -p` (Claude Code), user's own CLI sign-in | `unknown` | `cloud` | implemented, **blocked** by policy |
-| Codex CLI | `codex exec`, user's own CLI sign-in | `unknown` | `cloud` | implemented, **blocked** by policy |
 | Ollama / LM Studio | loopback runtime | `local` (per route) | `loopback_local` | non-user-facing tracer |
 
 ## Direct-vendor API boundary (OpenAI, Anthropic)
 
 The OpenAI and Anthropic API adapters follow the OpenRouter boundary exactly: disabled by default; one exact user-entered model ID (plain ID, no `/` route prefix, no leading `-`); separate persisted cloud-transmission and metered-billing permissions; an API key held only in the operating-system credential store; and a Rust-held, in-memory Chat session grant that starts empty on every launch, is bound to the approved model, and is revoked by any model, permission, or credential change. Requests go only to the fixed vendor endpoint, carry one user message, no tools, no streaming, and at most 512 output tokens and 4,000 prompt bytes. OpenAI requests set `store: false`. A failed request falls back to deterministic local guidance, never to another provider.
 
-At most one cloud Chat backend (OpenRouter, OpenAI, Anthropic, Claude CLI, or Codex CLI) may hold a session grant at a time. Enabling a second one is refused until the first is turned off, so the backend never changes silently.
+At most one cloud Chat backend (OpenRouter, OpenAI, or Anthropic) may hold a session grant at a time. Enabling a second one is refused until the first is turned off, so the backend never changes silently.
 
 B.O.B. has no budget ceiling of its own. The spending limit for a metered API key is set in the vendor console (see `docs/LIVE_INFERENCE_VALIDATION.md`).
 
-## Vendor CLI boundary (Claude CLI, Codex CLI)
+## Vendor agent CLIs are out of scope (owner decision, 2026-11-02)
 
-B.O.B. runs the unmodified vendor CLI as an external process, signed in through the vendor's own login flow. B.O.B. never reads, stores, or forwards the CLI's credentials. In Assist mode:
+B.O.B. is **API-only**. It does not drive Claude Code (`claude -p`), Codex (`codex exec`), or any other vendor agent CLI, even when one is installed and signed in. Two reasons:
 
-- Claude Code runs as `claude -p --output-format json --tools "" --safe-mode --strict-mcp-config --no-session-persistence --permission-mode dontAsk` with a short B.O.B. system prompt: every built-in tool is disabled, and hooks, plugins, MCP servers, and `CLAUDE.md` are off.
-- Codex runs as `codex exec --sandbox read-only --skip-git-repo-check --ephemeral --ignore-user-config --ignore-rules --json`. Codex has no flag that removes its read-only command tool, so B.O.B. kills the process the moment its event stream reports any command, file-change, MCP, or web-search item. This restriction gap is surfaced here, per ADR-0005.
-- Both run in an empty per-request scratch folder, receive the prompt on stdin (never as an argument), are killed with their whole process tree after 120 seconds or on user cancellation, and have stdout bounded to 256 KB. Only validated reply text reaches Chat; raw CLI output and errors never reach the frontend.
+- **Terms.** Anthropic's Claude Code legal page (`https://code.claude.com/docs/en/legal-and-compliance`, checked 2026-11-02) says Anthropic does not permit third-party developers to route requests through Free, Pro, Max, or Ultra plan credentials on behalf of their users, and that running Claude Code inside a product requires the Commercial Terms. OpenAI's Codex authentication docs (`https://learn.chatgpt.com/docs/auth`) direct programmatic use to API keys and do not address third-party apps using ChatGPT-plan sign-in. Neither gives the clear permission B.O.B. would need, and B.O.B. follows vendor terms.
+- **Single-agent identity.** These CLIs are full agents with their own tools, sessions, and system prompts. Driving one would put another agent behind B.O.B. rather than a model capability, and at least one (Codex) cannot fully disable its own command tool.
 
-**Billing classification is `unknown` for both CLIs, so the policy blocks them before any process starts.** Basis, checked 2026-11-02:
-
-- Anthropic, Claude Code "Legal and compliance" (`https://code.claude.com/docs/en/legal-and-compliance`): OAuth sign-in "is designed to support ordinary use of Claude Code and other native Anthropic applications"; Anthropic "does not permit third-party developers to ... route requests through Free, Pro, Max, or Ultra plan credentials on behalf of their users"; running Claude Code "in your products or services" requires the Commercial Terms; the page also says it does not "prevent an end user from signing in to the unmodified Claude Code binary with their own Claude subscription". That is not a clear allowance for a third-party desktop app to drive a user's subscription, and an API-key or extra-usage login is metered.
-- OpenAI, Codex authentication docs (`https://learn.chatgpt.com/docs/auth`, redirected from `developers.openai.com/codex/auth`): "Use API key authentication for programmatic Codex CLI workflows" and "API keys are still the recommended default for automation"; nothing addresses third-party applications using ChatGPT-plan sign-in. API-key sign-in "uses standard API pricing".
-
-Reclassifying either CLI to `subscription` or `metered` is an owner decision recorded in this document and in `CLAUDE_CLI_BILLING` / `CODEX_CLI_BILLING` (`src-tauri/src/inference_policy.rs`). A `metered` classification would also require the metered permission. Version and sign-in detection (`--version`, `claude auth status --json`, `codex login status`) never sends a prompt and reports only the auth method and plan tier, never an email, organization, or token.
+The same models are reachable through the OpenAI and Anthropic APIs with clear `metered` terms and B.O.B.'s own controls. Revisiting this needs a new owner decision backed by vendor terms that explicitly allow it. A bounded CLI adapter prototype was built and removed in PR #140; it remains in that branch's history.
 
 ## Provider verification
 

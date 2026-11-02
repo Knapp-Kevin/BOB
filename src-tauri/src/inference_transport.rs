@@ -292,9 +292,6 @@ impl InferenceTransport {
                 .post(&self.lm_studio_endpoint)
                 .json(&chat(None, false)),
             InferenceProvider::Ollama => bail!("Ollama uses the existing local adapter"),
-            InferenceProvider::ClaudeCli | InferenceProvider::CodexCli => {
-                bail!("CLI runtimes use the external-process adapter")
-            }
         };
         // Error strings never include the request, headers, or credential.
         let mut response = request

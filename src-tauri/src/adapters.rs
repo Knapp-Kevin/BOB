@@ -1,28 +1,25 @@
-//! Direct-vendor API adapters (OpenAI, Anthropic) and vendor CLI adapters
-//! (Claude Code, Codex), following the OpenRouter pattern.
+//! Direct-vendor API adapters (OpenAI, Anthropic), following the OpenRouter
+//! pattern.
 //!
-//! Each adapter is off by default. Generation requires, all at once: one
-//! exact approved model, the persisted permissions its billing class needs, a
-//! credential in the OS secret store (API adapters) or a signed-in CLI, and a
-//! Rust-held session grant that starts empty on every launch, is bound to the
-//! model it was granted for, and is revoked by any model, permission, or
-//! credential change. At most one cloud Chat backend (including OpenRouter) can
-//! hold a session grant at a time, so the backend never changes silently.
+//! Each adapter is off by default and classified `metered`. Generation
+//! requires, all at once: one exact approved model, persisted cloud and
+//! metered permissions, a credential in the OS secret store, and a Rust-held
+//! session grant that starts empty on every launch, is bound to the model it
+//! was granted for, and is revoked by any model, permission, or credential
+//! change. At most one cloud Chat backend (including OpenRouter) can hold a
+//! session grant at a time, so the backend never changes silently.
 //!
-//! CLI adapters are classified `unknown` billing (see `inference_policy`), so
-//! the policy blocks them before any process starts until the owner records a
-//! billing decision.
+//! B.O.B. is API-only: vendor agent CLIs (Claude Code, Codex) are out of scope
+//! (see `docs/governance/AI_COST_AND_PROVIDER_POLICY.md`).
 
-use crate::cli_runtime::{self, CancelToken, CliKind, CliStatus};
 use crate::inference_policy::{InferenceAuthorization, InferenceProvider};
-use crate::inference_transport::{InferenceTransport, MAX_PROMPT_BYTES};
+use crate::inference_transport::InferenceTransport;
 use crate::openrouter::OpenRouterCredentials;
 use crate::secrets::{OsSecretStore, SecretName, SecretStore};
 use crate::state::Store;
 use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::State;
 use zeroize::{Zeroize, Zeroizing};
@@ -33,27 +30,16 @@ pub enum AdapterId {
     OpenAi,
     #[serde(rename = "anthropic")]
     Anthropic,
-    #[serde(rename = "claude_cli")]
-    ClaudeCli,
-    #[serde(rename = "codex_cli")]
-    CodexCli,
 }
 
 impl AdapterId {
-    pub const ALL: [AdapterId; 4] = [
-        AdapterId::OpenAi,
-        AdapterId::Anthropic,
-        AdapterId::ClaudeCli,
-        AdapterId::CodexCli,
-    ];
+    pub const ALL: [AdapterId; 2] = [AdapterId::OpenAi, AdapterId::Anthropic];
 
     /// Stable key used in SQLite and by the frontend.
     pub fn key(self) -> &'static str {
         match self {
             Self::OpenAi => "openai",
             Self::Anthropic => "anthropic",
-            Self::ClaudeCli => "claude_cli",
-            Self::CodexCli => "codex_cli",
         }
     }
 
@@ -61,8 +47,6 @@ impl AdapterId {
         match self {
             Self::OpenAi => "OpenAI",
             Self::Anthropic => "Anthropic",
-            Self::ClaudeCli => "Claude CLI",
-            Self::CodexCli => "Codex CLI",
         }
     }
 
@@ -70,31 +54,13 @@ impl AdapterId {
         match self {
             Self::OpenAi => InferenceProvider::OpenAi,
             Self::Anthropic => InferenceProvider::Anthropic,
-            Self::ClaudeCli => InferenceProvider::ClaudeCli,
-            Self::CodexCli => InferenceProvider::CodexCli,
         }
     }
 
-    fn secret(self) -> Option<SecretName> {
+    fn secret(self) -> SecretName {
         match self {
-            Self::OpenAi => Some(SecretName::OpenAiApiKey),
-            Self::Anthropic => Some(SecretName::AnthropicApiKey),
-            Self::ClaudeCli | Self::CodexCli => None,
-        }
-    }
-
-    fn cli(self) -> Option<CliKind> {
-        match self {
-            Self::ClaudeCli => Some(CliKind::Claude),
-            Self::CodexCli => Some(CliKind::Codex),
-            Self::OpenAi | Self::Anthropic => None,
-        }
-    }
-
-    fn billing(self) -> &'static str {
-        match self.provider() {
-            InferenceProvider::ClaudeCli | InferenceProvider::CodexCli => "unknown",
-            _ => "metered",
+            Self::OpenAi => SecretName::OpenAiApiKey,
+            Self::Anthropic => SecretName::AnthropicApiKey,
         }
     }
 }
@@ -113,8 +79,6 @@ fn authorization_for(
     let allowed = match adapter {
         AdapterId::OpenAi => &mut authorization.openai_models,
         AdapterId::Anthropic => &mut authorization.anthropic_models,
-        AdapterId::ClaudeCli => &mut authorization.claude_cli_models,
-        AdapterId::CodexCli => &mut authorization.codex_cli_models,
     };
     allowed.insert(model.to_owned());
     authorization
@@ -133,8 +97,6 @@ fn persisted_authorization(
 pub struct Adapters {
     secrets: Arc<dyn SecretStore>,
     sessions: Mutex<HashMap<AdapterId, String>>,
-    in_flight: Mutex<Option<(AdapterId, CancelToken)>>,
-    cli_override: Option<PathBuf>,
 }
 
 impl Adapters {
@@ -146,8 +108,6 @@ impl Adapters {
         Self {
             secrets,
             sessions: Mutex::new(HashMap::new()),
-            in_flight: Mutex::new(None),
-            cli_override: None,
         }
     }
 
@@ -166,47 +126,17 @@ impl Adapters {
         self.sessions().get(&adapter).cloned()
     }
 
-    /// Revokes the grant and stops any in-flight generation for this adapter.
     pub fn revoke_session(&self, adapter: AdapterId) {
         self.sessions().remove(&adapter);
-        let in_flight = self
-            .in_flight
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some((running, token)) = in_flight.as_ref() {
-            if *running == adapter {
-                token.cancel();
-            }
-        }
-    }
-
-    pub fn cancel_generation(&self) -> bool {
-        let in_flight = self
-            .in_flight
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        match in_flight.as_ref() {
-            Some((_, token)) => {
-                token.cancel();
-                true
-            }
-            None => false,
-        }
     }
 
     pub fn credential_configured(&self, adapter: AdapterId) -> Result<bool> {
-        match adapter.secret() {
-            Some(name) => Ok(self.secrets.read(name)?.is_some()),
-            None => Ok(false),
-        }
+        Ok(self.secrets.read(adapter.secret())?.is_some())
     }
 
     pub fn configure_credential(&self, adapter: AdapterId, mut api_key: String) -> Result<bool> {
         let normalized = Zeroizing::new(api_key.trim().to_owned());
         api_key.zeroize();
-        let Some(name) = adapter.secret() else {
-            bail!("{} signs in through its own CLI", adapter.label());
-        };
         if normalized.len() < 20
             || normalized.len() > 4096
             || normalized
@@ -217,22 +147,18 @@ impl Adapters {
         }
         // A replaced credential may belong to a different account or budget.
         self.revoke_session(adapter);
-        self.secrets.write(name, &normalized)?;
+        self.secrets.write(adapter.secret(), &normalized)?;
         self.credential_configured(adapter)
     }
 
     pub fn remove_credential(&self, adapter: AdapterId) -> Result<bool> {
-        let Some(name) = adapter.secret() else {
-            bail!("{} signs in through its own CLI", adapter.label());
-        };
         self.revoke_session(adapter);
-        self.secrets.delete(name)?;
+        self.secrets.delete(adapter.secret())?;
         self.credential_configured(adapter)
     }
 
-    /// Enabling requires the full persisted authorization (which blocks
-    /// `unknown` billing), a stored credential for API adapters, and no other
-    /// cloud Chat backend holding a session.
+    /// Enabling requires the full persisted authorization, a stored
+    /// credential, and no other cloud Chat backend holding a session.
     pub fn set_session(
         &self,
         store: &Store,
@@ -255,17 +181,11 @@ impl Adapters {
         authorization
             .authorize(adapter.provider(), &model)
             .map_err(|reason| anyhow!("{} authorization denied: {reason:?}", adapter.label()))?;
-        if adapter.secret().is_some() && !self.credential_configured(adapter)? {
+        if !self.credential_configured(adapter)? {
             bail!("{} credential not configured", adapter.label());
         }
         self.sessions().insert(adapter, model);
         Ok(true)
-    }
-
-    fn cli_program(&self, kind: CliKind) -> Option<PathBuf> {
-        self.cli_override
-            .clone()
-            .or_else(|| cli_runtime::locate(kind))
     }
 
     pub async fn generate(
@@ -289,60 +209,19 @@ impl Adapters {
         authorization
             .authorize(adapter.provider(), &model)
             .map_err(|reason| anyhow!("{} authorization denied: {reason:?}", adapter.label()))?;
-        if prompt.trim().is_empty() || prompt.len() > MAX_PROMPT_BYTES {
-            bail!("invalid inference prompt length");
-        }
-
-        if let Some(name) = adapter.secret() {
-            let key = self
-                .secrets
-                .read(name)?
-                .ok_or_else(|| anyhow!("{} credential not configured", adapter.label()))?;
-            return transport
-                .generate(
-                    &authorization,
-                    adapter.provider(),
-                    &model,
-                    prompt,
-                    Some(key.as_str()),
-                )
-                .await;
-        }
-
-        let kind = adapter
-            .cli()
-            .ok_or_else(|| anyhow!("unsupported adapter"))?;
-        let program = self
-            .cli_program(kind)
-            .ok_or(cli_runtime::CliFailure::NotInstalled)?;
-        let token = CancelToken::default();
-        {
-            let mut in_flight = self
-                .in_flight
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            if in_flight.is_some() {
-                bail!("a CLI generation is already running");
-            }
-            *in_flight = Some((adapter, token.clone()));
-        }
-        let prompt = prompt.to_owned();
-        let result = tauri::async_runtime::spawn_blocking(move || {
-            cli_runtime::generate(
-                kind,
-                &program,
+        let key = self
+            .secrets
+            .read(adapter.secret())?
+            .ok_or_else(|| anyhow!("{} credential not configured", adapter.label()))?;
+        transport
+            .generate(
+                &authorization,
+                adapter.provider(),
                 &model,
-                &prompt,
-                cli_runtime::GENERATION_TIMEOUT,
-                &token,
+                prompt,
+                Some(key.as_str()),
             )
-        })
-        .await;
-        *self
-            .in_flight
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
-        Ok(result.map_err(|_| anyhow!("CLI runtime failed"))??)
+            .await
     }
 }
 
@@ -350,7 +229,6 @@ impl Adapters {
 #[serde(rename_all = "camelCase")]
 pub struct AdapterSettings {
     adapter: AdapterId,
-    billing: &'static str,
     model_id: Option<String>,
     cloud_enabled: bool,
     metered_enabled: bool,
@@ -366,7 +244,6 @@ fn settings_view(
     let (model_id, cloud_enabled, metered_enabled) = store.adapter_settings(adapter.key())?;
     Ok(AdapterSettings {
         adapter,
-        billing: adapter.billing(),
         model_id,
         cloud_enabled,
         metered_enabled,
@@ -468,31 +345,9 @@ pub async fn generate_with_adapter(
         .map_err(to_message)
 }
 
-#[tauri::command]
-pub fn cancel_adapter_generation(adapters: State<'_, Adapters>) -> bool {
-    adapters.cancel_generation()
-}
-
-/// Installation, version, and sign-in detection for a CLI adapter. Runs only
-/// the CLI's version and auth-status commands; never sends a prompt.
-#[tauri::command]
-pub async fn adapter_runtime_status(
-    adapters: State<'_, Adapters>,
-    adapter: AdapterId,
-) -> std::result::Result<CliStatus, String> {
-    let kind = adapter
-        .cli()
-        .ok_or_else(|| format!("{} is not a CLI adapter", adapter.label()))?;
-    let program = adapters.cli_program(kind);
-    tauri::async_runtime::spawn_blocking(move || cli_runtime::detect(kind, program.as_deref()))
-        .await
-        .map_err(|_| "CLI detection failed".to_owned())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli_runtime::fake;
     use crate::inference_transport::mock::{anthropic_message, completion, serve};
 
     const KEY: &str = "sk-test-secret-for-adapter-tests";
@@ -552,8 +407,6 @@ mod tests {
         match adapter {
             AdapterId::OpenAi => "gpt-test-mini",
             AdapterId::Anthropic => "claude-test-5",
-            AdapterId::ClaudeCli => "sonnet",
-            AdapterId::CodexCli => "gpt-test",
         }
     }
 
@@ -574,7 +427,7 @@ mod tests {
 
     #[test]
     fn api_session_requires_full_authorization() -> Result<()> {
-        for adapter in [AdapterId::OpenAi, AdapterId::Anthropic] {
+        for adapter in AdapterId::ALL {
             let (_dir, store, adapters) = fixture()?;
             let model = model_for(adapter);
             adapters.configure_credential(adapter, KEY.into())?;
@@ -612,7 +465,7 @@ mod tests {
     #[test]
     fn only_one_backend_session_at_a_time() -> Result<()> {
         let (_dir, store, adapters) = fixture()?;
-        for adapter in [AdapterId::OpenAi, AdapterId::Anthropic] {
+        for adapter in AdapterId::ALL {
             adapters.configure_credential(adapter, KEY.into())?;
             store.set_adapter_settings(adapter.key(), Some(model_for(adapter)), true, true)?;
         }
@@ -645,7 +498,7 @@ mod tests {
 
     #[test]
     fn no_api_request_without_session_or_after_revocation() -> Result<()> {
-        for adapter in [AdapterId::OpenAi, AdapterId::Anthropic] {
+        for adapter in AdapterId::ALL {
             let (_dir, store, adapters) = fixture()?;
             let server = serve(200, completion("unused"));
             let transport = InferenceTransport::for_test(server.endpoint.clone())?;
@@ -701,38 +554,6 @@ mod tests {
         );
         assert!(server.requests.lock().unwrap().is_empty());
         Ok(())
-    }
-
-    #[test]
-    fn cli_adapters_never_start_a_process_while_billing_is_unknown() -> Result<()> {
-        for adapter in [AdapterId::ClaudeCli, AdapterId::CodexCli] {
-            let (_dir, store, mut adapters) = fixture()?;
-            let cli = fake::install("{}", 0, 0);
-            adapters.cli_override = Some(cli.program.clone());
-            store.set_adapter_settings(adapter.key(), Some(model_for(adapter)), true, true)?;
-            let error = adapters
-                .set_session(&store, adapter, true, false)
-                .unwrap_err();
-            assert!(error.to_string().contains("BillingUnknown"), "{error}");
-            // Even a grant injected behind the gate is re-checked per request.
-            adapters
-                .sessions()
-                .insert(adapter, model_for(adapter).to_owned());
-            let transport = InferenceTransport::new()?;
-            let error = block_on(adapters.generate(&store, &transport, adapter, "hi")).unwrap_err();
-            assert!(error.to_string().contains("BillingUnknown"), "{error}");
-            assert!(!cli.invoked(), "CLI must not run");
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn cli_adapters_reject_api_keys() {
-        let adapters = Adapters::with_secrets(Arc::new(FakeSecretStore::default()));
-        assert!(adapters
-            .configure_credential(AdapterId::ClaudeCli, KEY.into())
-            .is_err());
-        assert!(!adapters.credential_configured(AdapterId::CodexCli).unwrap());
     }
 
     #[test]

@@ -1,7 +1,6 @@
 mod adapters;
 mod agent;
 mod backup;
-mod cli_runtime;
 mod export;
 mod gemini;
 pub mod inference_policy;
@@ -108,8 +107,6 @@ pub fn run() {
             adapters::configure_adapter_credential,
             adapters::remove_adapter_credential,
             adapters::generate_with_adapter,
-            adapters::cancel_adapter_generation,
-            adapters::adapter_runtime_status,
             gemini::generate_gemini_context
         ])
         .run(tauri::generate_context!())

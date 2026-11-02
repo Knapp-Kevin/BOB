@@ -762,14 +762,13 @@ fn run_migrations(
                 .execute_batch(
                     "CREATE TABLE adapter_settings (
                     adapter TEXT PRIMARY KEY NOT NULL
-                        CHECK(adapter IN ('openai', 'anthropic', 'claude_cli', 'codex_cli')),
+                        CHECK(adapter IN ('openai', 'anthropic')),
                     model_id TEXT,
                     cloud_enabled INTEGER NOT NULL DEFAULT 0 CHECK(cloud_enabled IN (0, 1)),
                     metered_enabled INTEGER NOT NULL DEFAULT 0 CHECK(metered_enabled IN (0, 1))
                 );
                 INSERT INTO adapter_settings(adapter, model_id, cloud_enabled, metered_enabled)
-                VALUES ('openai', NULL, 0, 0), ('anthropic', NULL, 0, 0),
-                       ('claude_cli', NULL, 0, 0), ('codex_cli', NULL, 0, 0);
+                VALUES ('openai', NULL, 0, 0), ('anthropic', NULL, 0, 0);
                 PRAGMA user_version = 6;",
                 )
                 .context("apply schema migration 6")?,
@@ -1123,8 +1122,14 @@ mod tests {
             (Some("vendor/approved-model".into()), true, true),
             "existing OpenRouter authorization is untouched"
         );
-        for adapter in ["openai", "anthropic", "claude_cli", "codex_cli"] {
+        for adapter in ["openai", "anthropic"] {
             assert_eq!(upgraded.adapter_settings(adapter)?, (None, false, false));
+        }
+        for adapter in ["claude_cli", "codex_cli"] {
+            assert!(
+                upgraded.adapter_settings(adapter).is_err(),
+                "no CLI adapters"
+            );
         }
         assert!(directory
             .path()

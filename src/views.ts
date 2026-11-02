@@ -1,5 +1,5 @@
 import { openRouterSettings, openRouterCredentialConfigured, openRouterStatus, openRouterChatEnabled, openRouterChatAvailable, openRouterBusy, openRouterKeyCopy } from "./openrouter_ui";
-import { activeAdapter, adapterCards, adapterGenerating, adapterLabel } from "./adapters_ui";
+import { activeAdapter, adapterCards, adapterLabel } from "./adapters_ui";
 import { activeItem, escapeHtml, focusItems, state, type ItemKind, type Route } from "./model";
 
 const navButton = (route: Route, icon: string, label: string) => `<button class="nav ${state.route === route ? "active" : ""}" data-route="${route}"><span>${icon}</span><strong>${label}</strong></button>`;
@@ -88,8 +88,7 @@ function renderChat() {
 function chatInferenceStatus() {
   const adapter = activeAdapter();
   if (adapter) {
-    const stop = adapterGenerating ? ` <button type="button" class="plain" id="adapter-stop">Stop waiting</button>` : "";
-    return `Cloud inference active: ${escapeHtml(adapterLabel(adapter.adapter))} (${escapeHtml(adapter.modelId ?? "no model")}). Prompts leave this device and may incur charges. Disable in Settings.${stop}`;
+    return `Cloud inference active: ${escapeHtml(adapterLabel(adapter.adapter))} (${escapeHtml(adapter.modelId ?? "no model")}). Prompts leave this device and may incur charges. Disable in Settings.`;
   }
   if (openRouterChatEnabled) return `Cloud inference active: OpenRouter (${escapeHtml(openRouterSettings.modelId ?? "no model")}). Prompts leave this device${openRouterSettings.freeOnly ? "; free models only, capped at a price of zero" : " and may incur charges"}. Disable in Settings.`;
   return "Local B.O.B. guidance active. Chat prompts are not sent to any cloud provider.";

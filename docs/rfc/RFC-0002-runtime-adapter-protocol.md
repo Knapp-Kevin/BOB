@@ -144,14 +144,7 @@ Claude Code, Codex, Antigravity, or another future runtime may be supported only
 
 B.O.B. does not reuse private credentials, scrape proprietary sessions, or make any one vendor client mandatory.
 
-Implemented CLI adapters (`src-tauri/src/cli_runtime.rs`, `src-tauri/src/adapters.rs`):
-
-- identity and health: the executable is found only on absolute `PATH` entries; `--version` gives the runtime version;
-- authentication: mechanism `account_session` or `api_key`, state `ready`, `missing`, or `unknown`, from `claude auth status --json` or `codex login status`, with identity fields discarded;
-- billing `unknown` and locality `cloud` for both, so invocation fails closed before any process starts until reclassified;
-- invocation: the prompt goes on stdin into an empty scratch folder; Claude Code runs with all tools disabled and customizations off, and Codex runs in its read-only sandbox with B.O.B. killing the process on any tool event;
-- cancellation and timeout: the whole process tree is killed (120 seconds, or a user stop);
-- normalized failures: not installed, unauthenticated, timeout, cancelled, invalid output, tool use attempted, execution failure.
+Owner decision (2026-11-02): B.O.B. is API-only and does not drive vendor agent CLIs. Current Anthropic and OpenAI terms do not clearly allow a third-party app to drive a user's subscription through Claude Code or Codex, and those CLIs are separate agents rather than model capabilities. See `docs/governance/AI_COST_AND_PROVIDER_POLICY.md`. Reopening this needs an explicit vendor allowance and a new owner decision.
 
 ### OpenRouter free-only mode
 

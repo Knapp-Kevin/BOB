@@ -11,8 +11,6 @@ pub enum InferenceProvider {
     LmStudio,
     OpenAi,
     Anthropic,
-    ClaudeCli,
-    CodexCli,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,20 +18,7 @@ pub enum ModelBilling {
     Free,
     Local,
     Metered,
-    Subscription,
-    Unknown,
 }
-
-/// Billing class for `claude -p` driven by B.O.B. Anthropic's Claude Code
-/// legal page does not clearly permit a third-party application to drive a
-/// user's subscription through the CLI, and an API-key or extra-usage login is
-/// metered, so the class stays `Unknown` (blocked) until the owner decides.
-pub const CLAUDE_CLI_BILLING: ModelBilling = ModelBilling::Unknown;
-
-/// Billing class for `codex exec` driven by B.O.B. OpenAI's Codex auth docs
-/// direct programmatic workflows to API keys and do not address third-party
-/// applications using ChatGPT-plan sign-in, so the class stays `Unknown`.
-pub const CODEX_CLI_BILLING: ModelBilling = ModelBilling::Unknown;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InferenceAuthorizationError {
@@ -44,7 +29,6 @@ pub enum InferenceAuthorizationError {
     CloudDisabled,
     LocalityMismatch,
     RouterModelNotAllowed,
-    BillingUnknown,
     FreeModelRequired,
 }
 
@@ -84,9 +68,8 @@ fn validate_model_id(model: &str) -> Result<(), InferenceAuthorizationError> {
     Ok(())
 }
 
-/// Direct-vendor and CLI model IDs are also passed as process arguments, so
-/// they are restricted to a conservative character set and cannot start with
-/// `-` (no option injection). Vendor IDs never contain a `/` route prefix.
+/// Direct-vendor model IDs are restricted to a conservative character set,
+/// cannot start with `-`, and never contain a `/` route prefix.
 pub fn validate_vendor_model_id(model: &str) -> Result<(), InferenceAuthorizationError> {
     validate_model_id(model)?;
     let first_ok = model
@@ -113,8 +96,6 @@ pub struct InferenceAuthorization {
     pub lm_studio_models: BTreeSet<String>,
     pub openai_models: BTreeSet<String>,
     pub anthropic_models: BTreeSet<String>,
-    pub claude_cli_models: BTreeSet<String>,
-    pub codex_cli_models: BTreeSet<String>,
     /// OpenRouter free-only mode: only `:free` models, billed `Free`, and the
     /// transport caps every price at zero so OpenRouter refuses paid routes.
     pub openrouter_free_only: bool,
@@ -133,10 +114,9 @@ impl InferenceAuthorization {
         match provider {
             InferenceProvider::OpenRouter => validate_openrouter_model_id(model)?,
             InferenceProvider::Ollama | InferenceProvider::LmStudio => validate_model_id(model)?,
-            InferenceProvider::OpenAi
-            | InferenceProvider::Anthropic
-            | InferenceProvider::ClaudeCli
-            | InferenceProvider::CodexCli => validate_vendor_model_id(model)?,
+            InferenceProvider::OpenAi | InferenceProvider::Anthropic => {
+                validate_vendor_model_id(model)?
+            }
         }
 
         let allowed = match provider {
@@ -145,8 +125,6 @@ impl InferenceAuthorization {
             InferenceProvider::LmStudio => &self.lm_studio_models,
             InferenceProvider::OpenAi => &self.openai_models,
             InferenceProvider::Anthropic => &self.anthropic_models,
-            InferenceProvider::ClaudeCli => &self.claude_cli_models,
-            InferenceProvider::CodexCli => &self.codex_cli_models,
         };
         if !allowed.contains(model) {
             return Err(InferenceAuthorizationError::ModelNotAllowed);
@@ -161,18 +139,13 @@ impl InferenceAuthorization {
             InferenceProvider::OpenRouter
             | InferenceProvider::OpenAi
             | InferenceProvider::Anthropic => self.cloud(ModelBilling::Metered),
-            InferenceProvider::ClaudeCli => self.cloud(CLAUDE_CLI_BILLING),
-            InferenceProvider::CodexCli => self.cloud(CODEX_CLI_BILLING),
             InferenceProvider::Ollama | InferenceProvider::LmStudio => Ok(ModelBilling::Local),
         }
     }
 
     /// Cloud routes always need cloud permission; metered routes also need the
-    /// metered permission, and an unclassified route is never allowed.
+    /// metered permission.
     fn cloud(&self, billing: ModelBilling) -> Result<ModelBilling, InferenceAuthorizationError> {
-        if billing == ModelBilling::Unknown {
-            return Err(InferenceAuthorizationError::BillingUnknown);
-        }
         if !self.cloud_enabled {
             return Err(InferenceAuthorizationError::CloudDisabled);
         }
@@ -196,8 +169,6 @@ mod tests {
             InferenceProvider::LmStudio,
             InferenceProvider::OpenAi,
             InferenceProvider::Anthropic,
-            InferenceProvider::ClaudeCli,
-            InferenceProvider::CodexCli,
         ] {
             let model = match provider {
                 InferenceProvider::OpenRouter => "vendor/model",
@@ -312,27 +283,6 @@ mod tests {
             policy.authorize(InferenceProvider::Anthropic, "gpt-test-mini"),
             Err(InferenceAuthorizationError::ModelNotAllowed),
             "allowlists stay per provider"
-        );
-    }
-
-    #[test]
-    fn cli_runtimes_with_unknown_billing_are_always_blocked() {
-        assert_eq!(CLAUDE_CLI_BILLING, ModelBilling::Unknown);
-        assert_eq!(CODEX_CLI_BILLING, ModelBilling::Unknown);
-        let mut policy = InferenceAuthorization {
-            cloud_enabled: true,
-            metered_enabled: true,
-            ..Default::default()
-        };
-        policy.claude_cli_models.insert("sonnet".into());
-        policy.codex_cli_models.insert("gpt-test".into());
-        assert_eq!(
-            policy.authorize(InferenceProvider::ClaudeCli, "sonnet"),
-            Err(InferenceAuthorizationError::BillingUnknown)
-        );
-        assert_eq!(
-            policy.authorize(InferenceProvider::CodexCli, "gpt-test"),
-            Err(InferenceAuthorizationError::BillingUnknown)
         );
     }
 
