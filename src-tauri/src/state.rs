@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fs, path::Path, sync::Mutex, time::Duration};
 use tauri::State;
 
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 const DATABASE_NAME: &str = "bob.sqlite3";
 const PROFILE_LOCK_NAME: &str = "bob.profile.lock";
 #[cfg(windows)]
@@ -297,6 +297,36 @@ impl Store {
         )?;
         if affected != 1 {
             bail!("adapter settings record missing; refusing silent authorization update");
+        }
+        Ok(())
+    }
+
+    pub fn openrouter_free_only(&self) -> Result<bool> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        connection
+            .query_row(
+                "SELECT free_only FROM openrouter_settings WHERE singleton = 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|value| value != 0)
+            .context("read OpenRouter free-only mode")
+    }
+
+    pub fn set_openrouter_free_only(&self, free_only: bool) -> Result<()> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("canonical state lock is poisoned"))?;
+        let affected = connection.execute(
+            "UPDATE openrouter_settings SET free_only = ?1 WHERE singleton = 1",
+            params![i64::from(free_only)],
+        )?;
+        if affected != 1 {
+            bail!("OpenRouter settings record missing; refusing silent authorization update");
         }
         Ok(())
     }
@@ -743,6 +773,13 @@ fn run_migrations(
                 PRAGMA user_version = 6;",
                 )
                 .context("apply schema migration 6")?,
+            6 => transaction
+                .execute_batch(
+                    "ALTER TABLE openrouter_settings ADD COLUMN free_only INTEGER NOT NULL DEFAULT 0
+                        CHECK(free_only IN (0, 1));
+                PRAGMA user_version = 7;",
+                )
+                .context("apply schema migration 7")?,
             other => bail!("no migration path exists from schema version {other}"),
         }
 
@@ -1069,11 +1106,16 @@ mod tests {
         }
         let db_path = directory.path().join(DATABASE_NAME);
         let legacy = Connection::open(&db_path)?;
-        legacy.execute_batch("DROP TABLE adapter_settings; PRAGMA user_version = 5;")?;
+        legacy.execute_batch(
+            "DROP TABLE adapter_settings; ALTER TABLE openrouter_settings DROP COLUMN free_only; PRAGMA user_version = 5;",
+        )?;
         drop(legacy);
 
         let upgraded = Store::open(directory.path())?;
-        assert_eq!(user_version(&upgraded.connection.lock().unwrap())?, 6);
+        assert_eq!(
+            user_version(&upgraded.connection.lock().unwrap())?,
+            SCHEMA_VERSION
+        );
         assert_eq!(upgraded.load()?, sample_state());
         assert_eq!(upgraded.load_chat()?[0].text, "Keep this conversation");
         assert_eq!(
@@ -1089,6 +1131,40 @@ mod tests {
             .join("recovery")
             .join("bob-pre-migration-1.sqlite3")
             .exists());
+        Ok(())
+    }
+
+    #[test]
+    fn v6_to_v7_migration_adds_free_only_off_and_keeps_authorization() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        {
+            let store = Store::open(directory.path())?;
+            store.save(&sample_state())?;
+            store.set_openrouter_settings(Some("vendor/approved-model"), true, true)?;
+            store.set_adapter_settings("openai", Some("gpt-test-mini"), true, true)?;
+        }
+        let db_path = directory.path().join(DATABASE_NAME);
+        let legacy = Connection::open(&db_path)?;
+        legacy.execute_batch(
+            "ALTER TABLE openrouter_settings DROP COLUMN free_only; PRAGMA user_version = 6;",
+        )?;
+        drop(legacy);
+
+        let upgraded = Store::open(directory.path())?;
+        assert_eq!(user_version(&upgraded.connection.lock().unwrap())?, 7);
+        assert_eq!(upgraded.load()?, sample_state());
+        assert_eq!(
+            upgraded.openrouter_settings()?,
+            (Some("vendor/approved-model".into()), true, true)
+        );
+        assert!(!upgraded.openrouter_free_only()?);
+        assert_eq!(
+            upgraded.adapter_settings("openai")?,
+            (Some("gpt-test-mini".into()), true, true)
+        );
+        upgraded.set_openrouter_free_only(true)?;
+        drop(upgraded);
+        assert!(Store::open(directory.path())?.openrouter_free_only()?);
         Ok(())
     }
 

@@ -18,7 +18,7 @@ B.O.B. has no budget ceiling of its own, so set the cap in each vendor console *
 
 | Provider | Where to cap spending |
 | --- | --- |
-| OpenRouter | openrouter.ai → Keys → create or edit the key → set a credit limit on the key. |
+| OpenRouter | openrouter.ai → Keys → create or edit the key → set a credit limit on the key. B.O.B. refuses paid OpenRouter use without one. Free-only mode needs no limit. |
 | OpenAI | platform.openai.com → create a dedicated project for B.O.B. → Settings → Limits → set a monthly budget. Create the key inside that project. Prefer a prepaid credit balance with auto-recharge off. |
 | Anthropic | platform.claude.com (Console) → create a dedicated workspace for B.O.B. → Settings → Limits → set a workspace spend limit. Create the key in that workspace. Prefer prepaid credits with auto-reload off. |
 
@@ -45,9 +45,26 @@ Record the cap you set in the PR or issue that tracks this validation.
 2. In B.O.B.: Settings → Inference → **Anthropic API**. Repeat steps 3–9 from the OpenAI section with the Anthropic key and model.
 3. Confirm usage appears in the Anthropic Console for that workspace.
 
-## 4. OpenRouter (already shipped, re-check)
+## 4. OpenRouter
 
-Repeat the OpenAI steps on the **OpenRouter** card with a `vendor/model` ID and a credit-limited key. Also confirm that with OpenRouter Chat on, enabling OpenAI or Anthropic Chat is refused until OpenRouter is turned off.
+### 4a. Free models only (no spending)
+
+1. Create an OpenRouter key. A credit limit is not needed for this part, but setting a small one is still wise.
+2. Pick a model whose ID ends in `:free` from openrouter.ai/models (filter by price: free).
+3. In B.O.B.: Settings → Inference → **OpenRouter**. Store the key, enter the `:free` model ID, check **Free models only** and **Allow cloud transmission** (leave the metered box unchecked), and save. The card header reads "CLOUD · FREE MODELS ONLY".
+4. Enable **Use OpenRouter in Chat for this session** and send the test prompt. Expect a reply, and in OpenRouter's Activity page a cost of $0 for that request.
+5. Negative checks:
+   - Change the model ID to one without `:free` and save. Enabling Chat is refused.
+   - If the reply fails with "No OpenRouter host for this model meets B.O.B.'s price and privacy limits", that free model has no host that refuses prompt logging. Try another `:free` model and record which ones failed.
+6. **Check key limits** shows free-model requests left today.
+
+### 4b. Paid models with a capped key
+
+1. Uncheck **Free models only**, enter a paid `vendor/model` ID, check both permissions, and save.
+2. With a key that has **no** credit limit: enabling Chat is refused with "paid use needs a key with a credit limit". **Check key limits** says the key has no limit.
+3. Set a small credit limit on that key at openrouter.ai → Keys. **Check key limits** now shows the limit and remaining credit. Enable Chat and send the test prompt.
+4. Remove the limit on openrouter.ai, then send another prompt. Expect "the key has no credit limit or no credit left" and local guidance, with Chat turned off.
+5. Confirm that with OpenRouter Chat on, enabling OpenAI or Anthropic Chat is refused until OpenRouter is turned off.
 
 ## 5. Claude CLI
 

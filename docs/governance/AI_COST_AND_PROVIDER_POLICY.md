@@ -81,12 +81,21 @@ OpenRouter is classified `metered` and `cloud`. It is disabled by default and re
 
 Choosing an OpenRouter model does not fix the upstream host that serves it, nor that host's data policy. B.O.B. never sends alternate models, and every request sets `provider.data_collection = "deny"` so OpenRouter routes only to hosts that do not collect prompt data. Requests are bounded to 4,000 prompt bytes and 512 output tokens. A failed OpenRouter request falls back to B.O.B.'s deterministic local guidance, never to another provider.
 
+### OpenRouter spending safeguards
+
+B.O.B. adds two safeguards of its own on top of the vendor console:
+
+- **Free models only** (a persisted setting, off by default for existing profiles). Only model IDs ending in `:free` are accepted, and that path is classified `free`: it needs the cloud permission and the session opt-in, not the metered permission. Every request also sends `provider.max_price` with `prompt`, `completion`, `request`, and `image` all `0`. OpenRouter documents that `max_price` "will prevent your request from running if the price is not available", so a paid route is refused on OpenRouter's side. B.O.B. accepts the reply only when OpenRouter's `usage.cost` is exactly `0`. A non-zero or missing cost discards the reply and revokes the Chat session. The `openrouter/free` router stays rejected because it picks a different model per request.
+- **Capped key for paid use.** Before a metered OpenRouter session is enabled, and before every metered request, B.O.B. reads `GET /api/v1/key`. It refuses when the key has no credit limit (`limit: null`) or no credit left, and a failed check also refuses. A cap removed on openrouter.ai mid-session revokes the session before the next prompt is sent. Settings shows the limit, remaining credit, and free-model requests left today; it never shows the key or account identity.
+
+Known limits: OpenRouter rate-limits `:free` models (20 per minute; 50 per day below 10 purchased credits, 1,000 above). Free variants can be retired (`expiration_date`). Free hosts may not meet `data_collection: "deny"`. B.O.B. keeps `deny`, so such a model fails with a clear "no host meets B.O.B.'s price and privacy limits" error rather than relaxing privacy.
+
 ## Implemented adapter classifications
 
 | Adapter | Surface | Billing class | Locality | State |
 | --- | --- | --- | --- | --- |
 | Gemini Developer API | API key | `free` (Free Tier boundary below) | `cloud` | advanced optional |
-| OpenRouter | API key, `chat/completions` | `metered` | `cloud` | optional, default off |
+| OpenRouter | API key, `chat/completions` | `metered`, or `free` in free-only mode | `cloud` | optional, default off |
 | OpenAI API | API key, `https://api.openai.com/v1/chat/completions` | `metered` | `cloud` | optional, default off |
 | Anthropic API | API key, `https://api.anthropic.com/v1/messages` | `metered` | `cloud` | optional, default off |
 | Claude CLI | `claude -p` (Claude Code), user's own CLI sign-in | `unknown` | `cloud` | implemented, **blocked** by policy |

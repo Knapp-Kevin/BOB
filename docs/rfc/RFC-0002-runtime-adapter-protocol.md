@@ -153,6 +153,10 @@ Implemented CLI adapters (`src-tauri/src/cli_runtime.rs`, `src-tauri/src/adapter
 - cancellation and timeout: the whole process tree is killed (120 seconds, or a user stop);
 - normalized failures: not installed, unauthenticated, timeout, cancelled, invalid output, tool use attempted, execution failure.
 
+### OpenRouter free-only mode
+
+In free-only mode the OpenRouter adapter reports billing `free`, sends `provider.max_price` all zero, and treats a non-zero or missing `usage.cost` as a failure that revokes the session. For paid mode, readiness includes a `GET /api/v1/key` check that the key carries a credit limit with credit left.
+
 ### Direct vendor APIs
 
 OpenAI (`chat/completions`) and Anthropic (Messages API, `x-api-key` and `anthropic-version: 2023-06-01`) adapters use API keys in the OS credential store, report `metered` billing and `cloud` locality, and share the OpenRouter transport bounds. They are reached only through fixed vendor endpoints.

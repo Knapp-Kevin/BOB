@@ -66,7 +66,7 @@ Provider/model changes that materially affect billing, privacy, locality, or use
 
 The currently implemented cloud adapter is Gemini Developer API, retained as an **advanced optional** capability behind its accepted professional/business-use, unpaid-service data-use, credential, and billing boundaries.
 
-An optional, default-disabled OpenRouter Chat path is implemented as an explicitly enabled `metered` cloud capability; its boundary is defined in `docs/governance/AI_COST_AND_PROVIDER_POLICY.md`.
+An optional, default-disabled OpenRouter Chat path is implemented as an explicitly enabled `metered` cloud capability; its boundary is defined in `docs/governance/AI_COST_AND_PROVIDER_POLICY.md`. It has two B.O.B.-side spending safeguards: a free-models-only mode that caps every request's price at zero and drops any reply that reports a charge, and a capped-key requirement that refuses paid use when the OpenRouter key has no credit limit.
 
 Direct OpenAI API and Anthropic API Chat paths are implemented with the same `metered` cloud boundary: off by default, one approved model, persisted cloud and metered permissions, an OS-stored API key, a per-launch session grant, and no fallback to another provider.
 

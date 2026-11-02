@@ -6,9 +6,15 @@
 //! held only in memory. It starts empty on every launch, is bound to the exact
 //! model that was authorized when granted, and is revoked by any change to the
 //! model authorization or credential.
+//!
+//! Two B.O.B.-side spending safeguards sit on top of the vendor console:
+//! free-only mode (only `:free` models, every price capped at zero, and any
+//! reply reporting a charge revokes the session), and, for metered use, a key
+//! check before enabling and before every request that refuses keys without a
+//! credit limit or with no credit left.
 
-use crate::inference_policy::{InferenceAuthorization, InferenceProvider};
-use crate::inference_transport::InferenceTransport;
+use crate::inference_policy::{InferenceAuthorization, InferenceProvider, ModelBilling};
+use crate::inference_transport::{FreeOnlyCharged, InferenceTransport, OpenRouterKeyStatus};
 use crate::secrets::{OsSecretStore, SecretName, SecretStore};
 use crate::state::Store;
 use anyhow::{anyhow, bail, Result};
@@ -89,18 +95,46 @@ impl OpenRouterCredentials {
             .map_err(|_| anyhow!("OpenRouter session lock is poisoned"))
     }
 
-    /// Enabling requires the full persisted authorization plus a stored credential.
-    pub fn set_session(&self, store: &Store, enabled: bool) -> Result<bool> {
+    /// Metered use is refused unless the key itself carries a credit limit with
+    /// credit left, so a leaked or forgotten key cannot spend without bound.
+    async fn require_capped_key(&self, transport: &InferenceTransport, key: &str) -> Result<()> {
+        let status = transport.openrouter_key_status(key).await?;
+        if !status.allows_metered() {
+            bail!("OpenRouter key has no credit limit or no credit left (uncapped key refused)");
+        }
+        Ok(())
+    }
+
+    pub async fn key_status(&self, transport: &InferenceTransport) -> Result<OpenRouterKeyStatus> {
+        let key = self
+            .secrets
+            .read(SecretName::OpenRouterApiKey)?
+            .ok_or_else(|| anyhow!("OpenRouter credential not configured"))?;
+        transport.openrouter_key_status(key.as_str()).await
+    }
+
+    /// Enabling requires the full persisted authorization plus a stored
+    /// credential, and for metered use a capped key.
+    pub async fn set_session(
+        &self,
+        store: &Store,
+        transport: &InferenceTransport,
+        enabled: bool,
+    ) -> Result<bool> {
         if !enabled {
             self.revoke_session();
             return Ok(false);
         }
         let (authorization, model) = persisted_authorization(store)?;
-        authorization
+        let billing = authorization
             .authorize(InferenceProvider::OpenRouter, &model)
             .map_err(|reason| anyhow!("OpenRouter authorization denied: {reason:?}"))?;
-        if !self.status()?.configured {
-            bail!("OpenRouter credential not configured");
+        let key = self
+            .secrets
+            .read(SecretName::OpenRouterApiKey)?
+            .ok_or_else(|| anyhow!("OpenRouter credential not configured"))?;
+        if billing == ModelBilling::Metered {
+            self.require_capped_key(transport, key.as_str()).await?;
         }
         *self
             .session
@@ -123,14 +157,21 @@ impl OpenRouterCredentials {
             self.revoke_session();
             bail!("OpenRouter model changed since Chat was enabled; re-enable to continue");
         }
-        authorization
+        let billing = authorization
             .authorize(InferenceProvider::OpenRouter, &model)
             .map_err(|reason| anyhow!("OpenRouter authorization denied: {reason:?}"))?;
         let key = self
             .secrets
             .read(SecretName::OpenRouterApiKey)?
             .ok_or_else(|| anyhow!("OpenRouter credential not configured"))?;
-        transport
+        if billing == ModelBilling::Metered {
+            // The cap may have been removed on openrouter.ai since Chat was enabled.
+            if let Err(error) = self.require_capped_key(transport, key.as_str()).await {
+                self.revoke_session();
+                return Err(error);
+            }
+        }
+        let result = transport
             .generate(
                 &authorization,
                 InferenceProvider::OpenRouter,
@@ -138,7 +179,14 @@ impl OpenRouterCredentials {
                 prompt,
                 Some(key.as_str()),
             )
-            .await
+            .await;
+        if result
+            .as_ref()
+            .is_err_and(|error| error.downcast_ref::<FreeOnlyCharged>().is_some())
+        {
+            self.revoke_session();
+        }
+        result
     }
 }
 
@@ -148,6 +196,7 @@ fn persisted_authorization(store: &Store) -> Result<(InferenceAuthorization, Str
     let mut authorization = InferenceAuthorization {
         cloud_enabled,
         metered_enabled,
+        openrouter_free_only: store.openrouter_free_only()?,
         ..Default::default()
     };
     authorization.openrouter_models.insert(model.clone());
@@ -160,6 +209,7 @@ pub struct OpenRouterSettings {
     model_id: Option<String>,
     cloud_enabled: bool,
     metered_enabled: bool,
+    free_only: bool,
     chat_session_enabled: bool,
 }
 
@@ -174,10 +224,14 @@ fn settings_view(
         .session_model()
         .map_err(|error| error.to_string())?
         .is_some();
+    let free_only = store
+        .openrouter_free_only()
+        .map_err(|error| error.to_string())?;
     Ok(OpenRouterSettings {
         model_id,
         cloud_enabled,
         metered_enabled,
+        free_only,
         chat_session_enabled,
     })
 }
@@ -197,17 +251,30 @@ pub fn configure_openrouter_model(
     model_id: Option<String>,
     cloud_enabled: bool,
     metered_enabled: bool,
+    free_only: bool,
 ) -> std::result::Result<OpenRouterSettings, String> {
     // Every model or billing policy change requires a fresh session opt-in.
     credentials.revoke_session();
+    // Switch to free-only first and leave it last, so a partial failure can
+    // only ever leave the stricter mode in place.
+    if free_only {
+        store
+            .set_openrouter_free_only(true)
+            .map_err(|error| error.to_string())?;
+    }
     store
         .set_openrouter_settings(model_id.as_deref(), cloud_enabled, metered_enabled)
         .map_err(|error| error.to_string())?;
+    if !free_only {
+        store
+            .set_openrouter_free_only(false)
+            .map_err(|error| error.to_string())?;
+    }
     settings_view(&store, &credentials)
 }
 
 #[tauri::command]
-pub fn set_openrouter_chat_session(
+pub async fn set_openrouter_chat_session(
     store: State<'_, Store>,
     credentials: State<'_, OpenRouterCredentials>,
     adapters: State<'_, crate::adapters::Adapters>,
@@ -217,10 +284,25 @@ pub fn set_openrouter_chat_session(
     if enabled && adapters.active_session().is_some() {
         return Err("another cloud Chat backend is enabled; turn it off first".into());
     }
+    let transport = InferenceTransport::new().map_err(|error| error.to_string())?;
     credentials
-        .set_session(&store, enabled)
+        .set_session(&store, &transport, enabled)
+        .await
         .map_err(|error| error.to_string())?;
     settings_view(&store, &credentials)
+}
+
+/// Credit limit, remaining credit, and free requests left today for the saved
+/// key. Sends no prompt and never returns the key or account identity.
+#[tauri::command]
+pub async fn openrouter_key_status(
+    credentials: State<'_, OpenRouterCredentials>,
+) -> std::result::Result<OpenRouterKeyStatus, String> {
+    let transport = InferenceTransport::new().map_err(|error| error.to_string())?;
+    credentials
+        .key_status(&transport)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -263,7 +345,9 @@ pub fn remove_openrouter_credential(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inference_transport::mock::{completion, serve};
+    use crate::inference_transport::mock::{
+        completion, completion_costing, key_status, serve_routes,
+    };
     use crate::state::ChatEntry;
     use anyhow::Result;
 
@@ -304,6 +388,34 @@ mod tests {
         tauri::async_runtime::block_on(future)
     }
 
+    /// Mock OpenRouter: a capped key with credit left, and `chat` for completions.
+    fn serve(status: u16, chat: String) -> crate::inference_transport::mock::MockServer {
+        serve_routes(vec![
+            ("/key", 200, key_status(Some(5.0), Some(4.0))),
+            ("/chat/completions", status, chat),
+        ])
+    }
+
+    fn chat_requests(server: &crate::inference_transport::mock::MockServer) -> usize {
+        server
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|raw| raw.starts_with("POST "))
+            .count()
+    }
+
+    fn enable(credentials: &OpenRouterCredentials, store: &Store) -> Result<bool> {
+        let server = serve(200, completion("unused"));
+        let transport = InferenceTransport::for_test(server.endpoint.clone())?;
+        block_on(credentials.set_session(store, &transport, true))
+    }
+
+    fn disable(credentials: &OpenRouterCredentials, store: &Store) -> Result<bool> {
+        block_on(credentials.set_session(store, &InferenceTransport::new()?, false))
+    }
+
     #[test]
     fn credential_lifecycle_never_returns_secret() -> Result<()> {
         let credentials = OpenRouterCredentials::with_secrets(Arc::new(FakeSecretStore::default()));
@@ -335,20 +447,20 @@ mod tests {
     fn disabled_by_default_and_session_requires_full_authorization() -> Result<()> {
         let (_dir, store, credentials) = fixture()?;
         assert_eq!(store.openrouter_settings()?, (None, false, false));
-        assert!(credentials.set_session(&store, true).is_err());
+        assert!(enable(&credentials, &store).is_err());
 
         credentials.configure(KEY.into())?;
-        assert!(credentials.set_session(&store, true).is_err(), "no model");
+        assert!(enable(&credentials, &store).is_err(), "no model");
         store.set_openrouter_settings(Some(MODEL), false, true)?;
-        assert!(credentials.set_session(&store, true).is_err(), "no cloud");
+        assert!(enable(&credentials, &store).is_err(), "no cloud");
         store.set_openrouter_settings(Some(MODEL), true, false)?;
-        assert!(credentials.set_session(&store, true).is_err(), "no metered");
+        assert!(enable(&credentials, &store).is_err(), "no metered");
         store.set_openrouter_settings(Some(MODEL), true, true)?;
         credentials.remove()?;
-        assert!(credentials.set_session(&store, true).is_err(), "no key");
+        assert!(enable(&credentials, &store).is_err(), "no key");
         credentials.configure(KEY.into())?;
-        assert!(credentials.set_session(&store, true)?);
-        assert!(!credentials.set_session(&store, false)?);
+        assert!(enable(&credentials, &store)?);
+        assert!(!disable(&credentials, &store)?);
         assert_eq!(credentials.session_model()?, None);
         Ok(())
     }
@@ -360,11 +472,11 @@ mod tests {
         let transport = InferenceTransport::for_test(server.endpoint.clone())?;
         credentials.configure(KEY.into())?;
         store.set_openrouter_settings(Some(MODEL), true, true)?;
-        credentials.set_session(&store, true)?;
+        enable(&credentials, &store)?;
 
         let reply = block_on(credentials.generate(&store, &transport, "Where do I start?"))?;
         assert_eq!(reply, "Pick the smallest next step.");
-        assert_eq!(server.requests.lock().unwrap().len(), 1);
+        assert_eq!(chat_requests(&server), 1);
         store.append_chat(ChatEntry {
             author: "bob".into(),
             text: reply.clone(),
@@ -387,24 +499,24 @@ mod tests {
         assert!(block_on(credentials.generate(&store, &transport, "hi")).is_err());
 
         // Credential replacement revokes the session grant.
-        credentials.set_session(&store, true)?;
+        enable(&credentials, &store)?;
         credentials.configure("sk-or-v1-replacement-key-0000".into())?;
         assert!(block_on(credentials.generate(&store, &transport, "hi")).is_err());
 
         // Credential removal revokes the session grant.
-        credentials.set_session(&store, true)?;
+        enable(&credentials, &store)?;
         credentials.remove()?;
         assert!(block_on(credentials.generate(&store, &transport, "hi")).is_err());
 
         // Persisted permission withdrawn behind an active grant (e.g. restore).
         credentials.configure(KEY.into())?;
-        credentials.set_session(&store, true)?;
+        enable(&credentials, &store)?;
         store.set_openrouter_settings(Some(MODEL), true, false)?;
         assert!(block_on(credentials.generate(&store, &transport, "hi")).is_err());
 
         // Model changed behind an active grant: no silent switch, grant revoked.
         store.set_openrouter_settings(Some(MODEL), true, true)?;
-        credentials.set_session(&store, true)?;
+        enable(&credentials, &store)?;
         store.set_openrouter_settings(Some("vendor/other-model"), true, true)?;
         let error = block_on(credentials.generate(&store, &transport, "hi")).unwrap_err();
         assert!(error.to_string().contains("model changed"));
@@ -416,11 +528,103 @@ mod tests {
     }
 
     #[test]
+    fn metered_session_refuses_uncapped_or_exhausted_keys() -> Result<()> {
+        let (_dir, store, credentials) = fixture()?;
+        credentials.configure(KEY.into())?;
+        store.set_openrouter_settings(Some(MODEL), true, true)?;
+        for (limit, remaining) in [(None, None), (Some(5.0), Some(0.0))] {
+            let server = serve_routes(vec![("/key", 200, key_status(limit, remaining))]);
+            let transport = InferenceTransport::for_test(server.endpoint.clone())?;
+            let error = block_on(credentials.set_session(&store, &transport, true)).unwrap_err();
+            assert!(
+                error.to_string().contains("uncapped key refused"),
+                "{error}"
+            );
+            assert_eq!(credentials.session_model()?, None);
+        }
+        // An unreachable key check fails closed.
+        let server = serve_routes(vec![("/key", 500, "{}".into())]);
+        let transport = InferenceTransport::for_test(server.endpoint.clone())?;
+        assert!(block_on(credentials.set_session(&store, &transport, true)).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn removing_the_key_cap_mid_session_revokes_before_sending() -> Result<()> {
+        let (_dir, store, credentials) = fixture()?;
+        credentials.configure(KEY.into())?;
+        store.set_openrouter_settings(Some(MODEL), true, true)?;
+        enable(&credentials, &store)?;
+        let server = serve_routes(vec![
+            ("/key", 200, key_status(None, None)),
+            ("/chat/completions", 200, completion("unused")),
+        ]);
+        let transport = InferenceTransport::for_test(server.endpoint.clone())?;
+        assert!(block_on(credentials.generate(&store, &transport, "hi")).is_err());
+        assert_eq!(credentials.session_model()?, None);
+        assert_eq!(chat_requests(&server), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn free_only_mode_needs_no_metered_permission_or_key_cap() -> Result<()> {
+        let (_dir, store, credentials) = fixture()?;
+        credentials.configure(KEY.into())?;
+        store.set_openrouter_free_only(true)?;
+        store.set_openrouter_settings(Some(MODEL), true, false)?;
+        assert!(enable(&credentials, &store).is_err(), "paid model refused");
+        store.set_openrouter_settings(Some("vendor/approved-model:free"), true, false)?;
+        // Uncapped key is fine here: the price cap, not the key, bounds spend.
+        let server = serve_routes(vec![
+            ("/key", 200, key_status(None, None)),
+            (
+                "/chat/completions",
+                200,
+                completion_costing("Free reply.", 0.0),
+            ),
+        ]);
+        let transport = InferenceTransport::for_test(server.endpoint.clone())?;
+        assert!(block_on(credentials.set_session(&store, &transport, true))?);
+        let reply = block_on(credentials.generate(&store, &transport, "hi"))?;
+        assert_eq!(reply, "Free reply.");
+        assert!(
+            server
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|raw| !raw.starts_with("GET /api/v1/key")),
+            "free-only mode does not depend on the key check"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn free_only_reply_that_reports_a_charge_revokes_the_session() -> Result<()> {
+        let (_dir, store, credentials) = fixture()?;
+        credentials.configure(KEY.into())?;
+        store.set_openrouter_free_only(true)?;
+        store.set_openrouter_settings(Some("vendor/approved-model:free"), true, false)?;
+        enable(&credentials, &store)?;
+        let server = serve(200, completion_costing("billed", 0.01));
+        let transport = InferenceTransport::for_test(server.endpoint.clone())?;
+        let error = block_on(credentials.generate(&store, &transport, "hi")).unwrap_err();
+        assert!(error.downcast_ref::<FreeOnlyCharged>().is_some());
+        assert_eq!(credentials.session_model()?, None);
+        assert!(
+            !settings_view(&store, &credentials)
+                .unwrap()
+                .chat_session_enabled
+        );
+        Ok(())
+    }
+
+    #[test]
     fn restart_does_not_restore_cloud_chat() -> Result<()> {
         let (dir, store, credentials) = fixture()?;
         credentials.configure(KEY.into())?;
         store.set_openrouter_settings(Some(MODEL), true, true)?;
-        credentials.set_session(&store, true)?;
+        enable(&credentials, &store)?;
         drop(store);
 
         // Relaunch: persisted authorization survives, the session grant does not.
@@ -452,7 +656,7 @@ mod tests {
         let transport = InferenceTransport::for_test(server.endpoint.clone())?;
         credentials.configure(KEY.into())?;
         store.set_openrouter_settings(Some(MODEL), true, true)?;
-        credentials.set_session(&store, true)?;
+        enable(&credentials, &store)?;
         let error = block_on(credentials.generate(&store, &transport, "hi")).unwrap_err();
         let message = error.to_string();
         assert!(message.contains("HTTP 402"));
@@ -465,7 +669,7 @@ mod tests {
         let (dir, store, credentials) = fixture()?;
         credentials.configure(KEY.into())?;
         store.set_openrouter_settings(Some(MODEL), true, true)?;
-        credentials.set_session(&store, true)?;
+        enable(&credentials, &store)?;
         let export =
             crate::export::export_json(store.load()?, store.load_accessibility_preferences()?)?;
         assert!(!export.contains(KEY));

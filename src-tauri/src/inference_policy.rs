@@ -17,6 +17,7 @@ pub enum InferenceProvider {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelBilling {
+    Free,
     Local,
     Metered,
     Subscription,
@@ -44,6 +45,12 @@ pub enum InferenceAuthorizationError {
     LocalityMismatch,
     RouterModelNotAllowed,
     BillingUnknown,
+    FreeModelRequired,
+}
+
+/// OpenRouter's zero-priced variants carry a `:free` suffix on the model name.
+pub fn is_openrouter_free_model(model: &str) -> bool {
+    model.ends_with(":free") && model.len() > ":free".len()
 }
 
 /// OpenRouter model IDs must name one `vendor/model`. OpenRouter's own
@@ -108,6 +115,9 @@ pub struct InferenceAuthorization {
     pub anthropic_models: BTreeSet<String>,
     pub claude_cli_models: BTreeSet<String>,
     pub codex_cli_models: BTreeSet<String>,
+    /// OpenRouter free-only mode: only `:free` models, billed `Free`, and the
+    /// transport caps every price at zero so OpenRouter refuses paid routes.
+    pub openrouter_free_only: bool,
     pub metered_enabled: bool,
     pub cloud_enabled: bool,
 }
@@ -142,6 +152,12 @@ impl InferenceAuthorization {
             return Err(InferenceAuthorizationError::ModelNotAllowed);
         }
         match provider {
+            InferenceProvider::OpenRouter if self.openrouter_free_only => {
+                if !is_openrouter_free_model(model) {
+                    return Err(InferenceAuthorizationError::FreeModelRequired);
+                }
+                self.cloud(ModelBilling::Free)
+            }
             InferenceProvider::OpenRouter
             | InferenceProvider::OpenAi
             | InferenceProvider::Anthropic => self.cloud(ModelBilling::Metered),
@@ -232,6 +248,37 @@ mod tests {
             policy.authorize(InferenceProvider::OpenRouter, "provider/approved-model"),
             Ok(ModelBilling::Metered)
         );
+    }
+
+    #[test]
+    fn openrouter_free_only_needs_free_model_and_cloud_but_not_metered() {
+        let mut policy = InferenceAuthorization {
+            openrouter_free_only: true,
+            ..Default::default()
+        };
+        policy.openrouter_models.insert("vendor/model:free".into());
+        policy.openrouter_models.insert("vendor/model".into());
+        assert_eq!(
+            policy.authorize(InferenceProvider::OpenRouter, "vendor/model:free"),
+            Err(InferenceAuthorizationError::CloudDisabled)
+        );
+        policy.cloud_enabled = true;
+        assert_eq!(
+            policy.authorize(InferenceProvider::OpenRouter, "vendor/model:free"),
+            Ok(ModelBilling::Free)
+        );
+        policy.metered_enabled = true;
+        assert_eq!(
+            policy.authorize(InferenceProvider::OpenRouter, "vendor/model"),
+            Err(InferenceAuthorizationError::FreeModelRequired),
+            "metered permission never widens free-only mode"
+        );
+        assert!(!is_openrouter_free_model(":free"));
+        assert!(!is_openrouter_free_model("vendor/model:freebie"));
+        policy.openrouter_models.insert("openrouter/free".into());
+        assert!(policy
+            .authorize(InferenceProvider::OpenRouter, "openrouter/free")
+            .is_err());
     }
 
     #[test]

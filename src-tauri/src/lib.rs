@@ -97,6 +97,7 @@ pub fn run() {
             openrouter::openrouter_settings,
             openrouter::configure_openrouter_model,
             openrouter::set_openrouter_chat_session,
+            openrouter::openrouter_key_status,
             openrouter::generate_openrouter,
             openrouter::openrouter_credential_status,
             openrouter::configure_openrouter_credential,

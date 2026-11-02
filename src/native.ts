@@ -17,7 +17,8 @@ export async function appendChatMessage(entry: { author: "user" | "bob"; text: s
   return invoke("append_chat_message", { entry });
 }
 
-export type OpenRouterAuthorization = { modelId: string | null; cloudEnabled: boolean; meteredEnabled: boolean };
+export type OpenRouterAuthorization = { modelId: string | null; cloudEnabled: boolean; meteredEnabled: boolean; freeOnly: boolean };
+export type OpenRouterKeyStatus = { limit: number | null; limitRemaining: number | null; usageMonthly: number | null; freeRequestsRemainingToday: number | null };
 export type OpenRouterSettings = OpenRouterAuthorization & { chatSessionEnabled: boolean };
 export type OpenRouterCredentialStatus = { configured: boolean };
 
@@ -31,8 +32,14 @@ export async function configureOpenRouterModel(settings: OpenRouterAuthorization
   return invoke<OpenRouterSettings>("configure_openrouter_model", {
     modelId: settings.modelId,
     cloudEnabled: settings.cloudEnabled,
-    meteredEnabled: settings.meteredEnabled
+    meteredEnabled: settings.meteredEnabled,
+    freeOnly: settings.freeOnly
   });
+}
+
+export async function loadOpenRouterKeyStatus(): Promise<OpenRouterKeyStatus> {
+  if (!isTauriRuntime()) throw new Error("OpenRouter key status requires the desktop application");
+  return invoke<OpenRouterKeyStatus>("openrouter_key_status");
 }
 
 export async function setOpenRouterChatSession(enabled: boolean): Promise<OpenRouterSettings> {

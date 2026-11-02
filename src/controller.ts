@@ -2,7 +2,7 @@ import { activeItem, applyPlanProjection, escapeHtml, focusItems, hydratePersist
 import { generateWithOpenRouter, appendChatMessage, clearChatHistory, applyNextActionProposal, assistWithBob, captureItem, classifyInboxItem, clearHandoff, configureGeminiCredential, deferCurrentWork, exportPortableState, removeGeminiCredential, replanRemainingWork, resumeDeferredTask, saveCurrentHandoff, selectNextTask, startCurrentWork, toggleTaskCompleted } from "./native";
 import { renderShell } from "./views";
 import { activeAdapter, adapterFailureMessage, bindAdapterControls, generateWithActiveAdapter, refreshAdapters } from "./adapters_ui";
-import { saveOpenRouterAuthorization, saveOpenRouterKey, removeOpenRouterKey, openRouterChatEnabled, openRouterFailureMessage, refreshOpenRouter, setOpenRouterChatEnabled } from "./openrouter_ui";
+import { checkOpenRouterKey, saveOpenRouterAuthorization, saveOpenRouterKey, removeOpenRouterKey, openRouterChatEnabled, openRouterFailureMessage, refreshOpenRouter, setOpenRouterChatEnabled } from "./openrouter_ui";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
 if (!root) throw new Error("Missing app root");
@@ -417,8 +417,9 @@ function bindEvents() {
     const modelId = document.querySelector<HTMLInputElement>("#openrouter-model")?.value.trim() || null;
     const cloudEnabled = Boolean(document.querySelector<HTMLInputElement>("#openrouter-cloud")?.checked);
     const meteredEnabled = Boolean(document.querySelector<HTMLInputElement>("#openrouter-metered")?.checked);
-    if (cloudEnabled && meteredEnabled && !window.confirm("Authorize sending Chat prompts to OpenRouter using the selected model? This can incur separately billed API usage.")) return;
-    void saveOpenRouterAuthorization({ modelId, cloudEnabled, meteredEnabled }).finally(render);
+    const freeOnly = Boolean(document.querySelector<HTMLInputElement>("#openrouter-free-only")?.checked);
+    if (!freeOnly && cloudEnabled && meteredEnabled && !window.confirm("Authorize sending Chat prompts to OpenRouter using the selected model? This can incur separately billed API usage.")) return;
+    void saveOpenRouterAuthorization({ modelId, cloudEnabled, meteredEnabled, freeOnly }).finally(render);
   });
   document.querySelector("#openrouter-credential")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -426,6 +427,11 @@ function bindEvents() {
     const key = input?.value ?? "";
     if (input) input.value = "";
     void saveOpenRouterKey(key).finally(render);
+  });
+  document.querySelector("#openrouter-check-key")?.addEventListener("click", () => {
+    const pending = checkOpenRouterKey().finally(render);
+    render();
+    void pending;
   });
   document.querySelector("#openrouter-remove-key")?.addEventListener("click", () => {
     if (!window.confirm("Remove the saved OpenRouter API key?")) return;
