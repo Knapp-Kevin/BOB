@@ -17,9 +17,9 @@ export async function appendChatMessage(entry: { author: "user" | "bob"; text: s
   return invoke("append_chat_message", { entry });
 }
 
-export type OpenRouterAuthorization = { modelId: string | null; cloudEnabled: boolean; meteredEnabled: boolean; freeOnly: boolean };
+export type OpenRouterAuthorization = { modelId: string | null; cloudEnabled: boolean; meteredEnabled: boolean; freeOnly: boolean; monthlyCapUsd: number | null };
 export type OpenRouterKeyStatus = { limit: number | null; limitRemaining: number | null; usageMonthly: number | null; freeRequestsRemainingToday: number | null };
-export type OpenRouterSettings = OpenRouterAuthorization & { chatSessionEnabled: boolean };
+export type OpenRouterSettings = Omit<OpenRouterAuthorization, "monthlyCapUsd"> & { chatSessionEnabled: boolean; monthlyCapMicros: number | null; spentThisMonthMicros: number; suggestedMonthlyCapMicros: number };
 export type OpenRouterCredentialStatus = { configured: boolean };
 
 export async function loadOpenRouterSettings(): Promise<OpenRouterSettings | null> {
@@ -33,7 +33,8 @@ export async function configureOpenRouterModel(settings: OpenRouterAuthorization
     modelId: settings.modelId,
     cloudEnabled: settings.cloudEnabled,
     meteredEnabled: settings.meteredEnabled,
-    freeOnly: settings.freeOnly
+    freeOnly: settings.freeOnly,
+    monthlyCapUsd: settings.monthlyCapUsd
   });
 }
 
@@ -177,8 +178,27 @@ export type AdapterSettings = {
   meteredEnabled: boolean;
   credentialConfigured: boolean;
   chatSessionEnabled: boolean;
+  monthlyCapMicros: number | null;
+  inputPriceMicros: number | null;
+  outputPriceMicros: number | null;
+  spentThisMonthMicros: number;
+  suggestedMonthlyCapMicros: number;
 };
-export type AdapterAuthorization = { modelId: string | null; cloudEnabled: boolean; meteredEnabled: boolean };
+export type AdapterAuthorization = {
+  modelId: string | null;
+  cloudEnabled: boolean;
+  meteredEnabled: boolean;
+  monthlyCapUsd: number | null;
+  inputPriceUsd: number | null;
+  outputPriceUsd: number | null;
+};
+export type ProviderPage = "openrouter_keys" | "openrouter_free_models" | "openai_keys" | "openai_limits" | "openai_pricing" | "anthropic_keys" | "anthropic_limits" | "anthropic_pricing";
+
+/** Opens a fixed provider setup page in the default browser. */
+export async function openProviderPage(page: ProviderPage): Promise<void> {
+  if (!isTauriRuntime()) throw new Error("Opening provider pages requires the desktop application");
+  await invoke("open_provider_page", { page });
+}
 
 export async function loadAdapterSettings(): Promise<AdapterSettings[] | null> {
   if (!isTauriRuntime()) return null;
@@ -187,7 +207,7 @@ export async function loadAdapterSettings(): Promise<AdapterSettings[] | null> {
 
 export async function configureAdapterModel(adapter: AdapterId, settings: AdapterAuthorization): Promise<AdapterSettings[]> {
   if (!isTauriRuntime()) throw new Error("Provider configuration requires the desktop application");
-  return invoke<AdapterSettings[]>("configure_adapter_model", { adapter, ...settings });
+  return invoke<AdapterSettings[]>("configure_adapter_model", { adapter, authorization: settings });
 }
 
 export async function setAdapterChatSession(adapter: AdapterId, enabled: boolean): Promise<AdapterSettings[]> {

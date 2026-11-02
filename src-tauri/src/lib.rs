@@ -9,8 +9,10 @@ pub mod ollama;
 mod openrouter;
 mod planner;
 mod proposals;
+mod provider_links;
 pub mod runtime;
 mod secrets;
+mod spend;
 mod state;
 mod work;
 
@@ -107,6 +109,7 @@ pub fn run() {
             adapters::configure_adapter_credential,
             adapters::remove_adapter_credential,
             adapters::generate_with_adapter,
+            provider_links::open_provider_page,
             gemini::generate_gemini_context
         ])
         .run(tauri::generate_context!())

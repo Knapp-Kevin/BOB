@@ -9,14 +9,21 @@
 //! change. At most one cloud Chat backend (including OpenRouter) can hold a
 //! session grant at a time, so the backend never changes silently.
 //!
+//! Metered use also requires a B.O.B.-side monthly spending limit and the
+//! model's token prices. Each request reserves its worst-case cost against the
+//! limit before it is sent and is then charged its actual cost (see `spend`).
+//!
 //! B.O.B. is API-only: vendor agent CLIs (Claude Code, Codex) are out of scope
 //! (see `docs/governance/AI_COST_AND_PROVIDER_POLICY.md`).
 
 use crate::inference_policy::{InferenceAuthorization, InferenceProvider};
-use crate::inference_transport::InferenceTransport;
+use crate::inference_transport::{
+    InferenceTransport, ProviderRejected, MAX_OUTPUT_TOKENS, MAX_PROMPT_BYTES,
+};
 use crate::openrouter::OpenRouterCredentials;
 use crate::secrets::{OsSecretStore, SecretName, SecretStore};
-use crate::state::Store;
+use crate::spend::{self, TokenPrices};
+use crate::state::{SpendLimits, Store};
 use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -92,6 +99,19 @@ fn persisted_authorization(
     let model =
         model.ok_or_else(|| anyhow!("{} model has not been authorized", adapter.label()))?;
     Ok((authorization_for(adapter, &model, cloud, metered), model))
+}
+
+/// The configured monthly limit and prices, or a refusal if any is missing.
+fn required_limits(store: &Store, adapter: AdapterId) -> Result<(i64, TokenPrices)> {
+    let limits = store.adapter_limits(adapter.key())?;
+    match (
+        limits.monthly_cap_micros,
+        limits.input_price_micros,
+        limits.output_price_micros,
+    ) {
+        (Some(cap), Some(input), Some(output)) => Ok((cap, TokenPrices { input, output })),
+        _ => bail!("{} monthly spending limit not configured", adapter.label()),
+    }
 }
 
 pub struct Adapters {
@@ -184,6 +204,10 @@ impl Adapters {
         if !self.credential_configured(adapter)? {
             bail!("{} credential not configured", adapter.label());
         }
+        let (cap, _) = required_limits(store, adapter)?;
+        if store.spent_micros(adapter.key(), &spend::current_month())? >= cap {
+            bail!("monthly spending limit reached");
+        }
         self.sessions().insert(adapter, model);
         Ok(true)
     }
@@ -213,15 +237,34 @@ impl Adapters {
             .secrets
             .read(adapter.secret())?
             .ok_or_else(|| anyhow!("{} credential not configured", adapter.label()))?;
-        transport
-            .generate(
+        if prompt.trim().is_empty() || prompt.len() > MAX_PROMPT_BYTES {
+            bail!("invalid inference prompt length");
+        }
+        let (cap, prices) = required_limits(store, adapter)?;
+        let month = spend::current_month();
+        let reserved = prices.worst_case(prompt.len(), MAX_OUTPUT_TOKENS);
+        store.reserve_spend(adapter.key(), &month, reserved, cap)?;
+        let result = transport
+            .generate_with_usage(
                 &authorization,
                 adapter.provider(),
                 &model,
                 prompt,
                 Some(key.as_str()),
             )
-            .await
+            .await;
+        // Charge the actual cost; a rejected request is not billed; any other
+        // outcome (timeout, unreadable reply, missing usage) stays at worst case.
+        let correction = match &result {
+            Ok(generation) => match (generation.input_tokens, generation.output_tokens) {
+                (Some(input), Some(output)) => prices.cost(input, output) - reserved,
+                _ => 0,
+            },
+            Err(error) if error.downcast_ref::<ProviderRejected>().is_some() => -reserved,
+            Err(_) => 0,
+        };
+        store.adjust_spend(adapter.key(), &month, correction)?;
+        result.map(|generation| generation.text)
     }
 }
 
@@ -234,6 +277,11 @@ pub struct AdapterSettings {
     metered_enabled: bool,
     credential_configured: bool,
     chat_session_enabled: bool,
+    monthly_cap_micros: Option<i64>,
+    input_price_micros: Option<i64>,
+    output_price_micros: Option<i64>,
+    spent_this_month_micros: i64,
+    suggested_monthly_cap_micros: i64,
 }
 
 fn settings_view(
@@ -242,6 +290,7 @@ fn settings_view(
     adapter: AdapterId,
 ) -> Result<AdapterSettings> {
     let (model_id, cloud_enabled, metered_enabled) = store.adapter_settings(adapter.key())?;
+    let limits = store.adapter_limits(adapter.key())?;
     Ok(AdapterSettings {
         adapter,
         model_id,
@@ -249,6 +298,11 @@ fn settings_view(
         metered_enabled,
         credential_configured: adapters.credential_configured(adapter)?,
         chat_session_enabled: adapters.session_model(adapter).is_some(),
+        monthly_cap_micros: limits.monthly_cap_micros,
+        input_price_micros: limits.input_price_micros,
+        output_price_micros: limits.output_price_micros,
+        spent_this_month_micros: store.spent_micros(adapter.key(), &spend::current_month())?,
+        suggested_monthly_cap_micros: spend::DEFAULT_MONTHLY_CAP_MICROS,
     })
 }
 
@@ -271,23 +325,59 @@ pub fn adapter_settings(
     all_settings(&store, &adapters).map_err(to_message)
 }
 
+/// Model authorization and its required spending configuration, as entered
+/// in Settings. Dollar amounts; prices are per million tokens.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterAuthorizationInput {
+    model_id: Option<String>,
+    cloud_enabled: bool,
+    metered_enabled: bool,
+    monthly_cap_usd: Option<f64>,
+    input_price_usd: Option<f64>,
+    output_price_usd: Option<f64>,
+}
+
 #[tauri::command]
 pub fn configure_adapter_model(
     store: State<'_, Store>,
     adapters: State<'_, Adapters>,
     adapter: AdapterId,
-    model_id: Option<String>,
-    cloud_enabled: bool,
-    metered_enabled: bool,
+    authorization: AdapterAuthorizationInput,
 ) -> std::result::Result<Vec<AdapterSettings>, String> {
     // Every model or billing policy change requires a fresh session opt-in.
     adapters.revoke_session(adapter);
+    let limits = SpendLimits {
+        monthly_cap_micros: authorization
+            .monthly_cap_usd
+            .and_then(spend::dollars_to_micros),
+        input_price_micros: authorization
+            .input_price_usd
+            .and_then(spend::dollars_to_micros),
+        output_price_micros: authorization
+            .output_price_usd
+            .and_then(spend::dollars_to_micros),
+    };
+    // A monthly limit and both prices are required configuration for metered use.
+    if authorization.metered_enabled
+        && (limits.monthly_cap_micros.is_none()
+            || limits.input_price_micros.is_none()
+            || limits.output_price_micros.is_none())
+    {
+        return Err(format!(
+            "{} monthly spending limit not configured",
+            adapter.label()
+        ));
+    }
+    store
+        .set_adapter_limits(adapter.key(), limits)
+        .map_err(to_message)?;
     store
         .set_adapter_settings(
             adapter.key(),
-            model_id.as_deref(),
-            cloud_enabled,
-            metered_enabled,
+            authorization.model_id.as_deref(),
+            authorization.cloud_enabled,
+            authorization.metered_enabled,
         )
         .map_err(to_message)?;
     all_settings(&store, &adapters).map_err(to_message)
@@ -389,9 +479,19 @@ mod tests {
         }
     }
 
+    /// $20 a month; $1 per million input tokens, $2 per million output tokens.
+    const LIMITS: SpendLimits = SpendLimits {
+        monthly_cap_micros: Some(spend::DEFAULT_MONTHLY_CAP_MICROS),
+        input_price_micros: Some(1_000_000),
+        output_price_micros: Some(2_000_000),
+    };
+
     fn fixture() -> Result<(tempfile::TempDir, Store, Adapters)> {
         let directory = tempfile::tempdir()?;
         let store = Store::open(directory.path())?;
+        for adapter in AdapterId::ALL {
+            store.set_adapter_limits(adapter.key(), LIMITS)?;
+        }
         Ok((
             directory,
             store,
@@ -580,6 +680,130 @@ mod tests {
                     .any(|window| window == KEY.as_bytes()));
             }
         }
+        Ok(())
+    }
+
+    fn ready(store: &Store, adapters: &Adapters, adapter: AdapterId) -> Result<()> {
+        adapters.configure_credential(adapter, KEY.into())?;
+        store.set_adapter_settings(adapter.key(), Some(model_for(adapter)), true, true)?;
+        adapters.set_session(store, adapter, true, false)?;
+        Ok(())
+    }
+
+    #[test]
+    fn metered_use_requires_a_monthly_limit_and_prices() -> Result<()> {
+        let (_dir, store, adapters) = fixture()?;
+        adapters.configure_credential(AdapterId::OpenAi, KEY.into())?;
+        store.set_adapter_settings("openai", Some("gpt-test-mini"), true, true)?;
+        for missing in [
+            SpendLimits {
+                monthly_cap_micros: None,
+                ..LIMITS
+            },
+            SpendLimits {
+                input_price_micros: None,
+                ..LIMITS
+            },
+            SpendLimits {
+                output_price_micros: None,
+                ..LIMITS
+            },
+        ] {
+            store.set_adapter_limits("openai", missing)?;
+            let error = adapters
+                .set_session(&store, AdapterId::OpenAi, true, false)
+                .unwrap_err();
+            assert!(error.to_string().contains("spending limit not configured"));
+        }
+        // A grant made earlier still cannot send once the limit is removed.
+        store.set_adapter_limits("openai", LIMITS)?;
+        adapters.set_session(&store, AdapterId::OpenAi, true, false)?;
+        store.set_adapter_limits("openai", SpendLimits::default())?;
+        let server = serve(200, completion("unused"));
+        let transport = InferenceTransport::for_test(server.endpoint.clone())?;
+        assert!(block_on(adapters.generate(&store, &transport, AdapterId::OpenAi, "hi")).is_err());
+        assert!(server.requests.lock().unwrap().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn each_reply_is_charged_its_actual_cost() -> Result<()> {
+        for (adapter, body) in [
+            (AdapterId::OpenAi, completion("reply")),
+            (AdapterId::Anthropic, anthropic_message("reply")),
+        ] {
+            let (_dir, store, adapters) = fixture()?;
+            ready(&store, &adapters, adapter)?;
+            let server = serve(200, body);
+            let transport = InferenceTransport::for_test(server.endpoint.clone())?;
+            block_on(adapters.generate(&store, &transport, adapter, "hi"))?;
+            // Mocks report 3 input and 5 output tokens: ceil((3*1 + 5*2) / 1e6 * 1e6) micros.
+            assert_eq!(
+                store.spent_micros(adapter.key(), &spend::current_month())?,
+                TokenPrices {
+                    input: 1_000_000,
+                    output: 2_000_000
+                }
+                .cost(3, 5)
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn requests_that_could_exceed_the_limit_are_never_sent() -> Result<()> {
+        let (_dir, store, adapters) = fixture()?;
+        ready(&store, &adapters, AdapterId::OpenAi)?;
+        let month = spend::current_month();
+        let worst = TokenPrices {
+            input: 1_000_000,
+            output: 2_000_000,
+        }
+        .worst_case(2, MAX_OUTPUT_TOKENS);
+        // Leave less headroom than one worst-case request.
+        store.adjust_spend(
+            "openai",
+            &month,
+            spend::DEFAULT_MONTHLY_CAP_MICROS - worst + 1,
+        )?;
+        let server = serve(200, completion("unused"));
+        let transport = InferenceTransport::for_test(server.endpoint.clone())?;
+        let error =
+            block_on(adapters.generate(&store, &transport, AdapterId::OpenAi, "hi")).unwrap_err();
+        assert!(error.to_string().contains("monthly spending limit reached"));
+        assert!(server.requests.lock().unwrap().is_empty());
+        // Once the limit is reached, Chat cannot even be re-enabled.
+        store.adjust_spend("openai", &month, worst)?;
+        adapters.set_session(&store, AdapterId::OpenAi, false, false)?;
+        assert!(adapters
+            .set_session(&store, AdapterId::OpenAi, true, false)
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn rejected_requests_release_the_reservation_and_unknown_outcomes_keep_it() -> Result<()> {
+        let (_dir, store, adapters) = fixture()?;
+        ready(&store, &adapters, AdapterId::Anthropic)?;
+        let month = spend::current_month();
+        let server = serve(429, "{}".into());
+        let transport = InferenceTransport::for_test(server.endpoint.clone())?;
+        assert!(
+            block_on(adapters.generate(&store, &transport, AdapterId::Anthropic, "hi")).is_err()
+        );
+        assert_eq!(store.spent_micros("anthropic", &month)?, 0);
+
+        let server = serve(200, "not json".into());
+        let transport = InferenceTransport::for_test(server.endpoint.clone())?;
+        assert!(
+            block_on(adapters.generate(&store, &transport, AdapterId::Anthropic, "hi")).is_err()
+        );
+        let worst = TokenPrices {
+            input: 1_000_000,
+            output: 2_000_000,
+        }
+        .worst_case(2, MAX_OUTPUT_TOKENS);
+        assert_eq!(store.spent_micros("anthropic", &month)?, worst);
         Ok(())
     }
 

@@ -148,7 +148,11 @@ Owner decision (2026-11-02): B.O.B. is API-only and does not drive vendor agent 
 
 ### OpenRouter free-only mode
 
-In free-only mode the OpenRouter adapter reports billing `free`, sends `provider.max_price` all zero, and treats a non-zero or missing `usage.cost` as a failure that revokes the session. For paid mode, readiness includes a `GET /api/v1/key` check that the key carries a credit limit with credit left.
+In free-only mode the OpenRouter adapter reports billing `free`, sends `provider.max_price` all zero, and treats a non-zero or missing `usage.cost` as a failure that revokes the session. Free-only mode is the default. For paid mode, readiness includes a `GET /api/v1/key` check that the key carries a credit limit with credit left, and a configured B.O.B. monthly spending limit with headroom.
+
+### Spend accounting
+
+Metered adapters reserve a worst-case cost against a B.O.B. monthly limit before invocation and settle the actual cost from the provider's reported usage afterwards (`src-tauri/src/spend.rs`, `spend_ledger` in schema v7). A provider rejection releases the reservation; an uncertain outcome keeps it.
 
 ### Direct vendor APIs
 

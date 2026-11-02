@@ -29,7 +29,7 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 const TIMEOUT: Duration = Duration::from_secs(60);
 pub const MAX_PROMPT_BYTES: usize = 4_000;
 const MAX_RESPONSE_BYTES: usize = 64_000;
-const MAX_OUTPUT_TOKENS: u32 = 512;
+pub const MAX_OUTPUT_TOKENS: u32 = 512;
 // Must match the canonical chat-entry persistence limit.
 const MAX_GENERATION_BYTES: usize = 8_000;
 
@@ -66,7 +66,40 @@ struct AnthropicResponse {
     content: Vec<AnthropicBlock>,
     #[serde(default)]
     stop_reason: Option<String>,
+    #[serde(default)]
+    usage: Option<AnthropicUsage>,
 }
+
+#[derive(Deserialize)]
+struct AnthropicUsage {
+    #[serde(default)]
+    input_tokens: Option<u64>,
+    #[serde(default)]
+    output_tokens: Option<u64>,
+}
+
+/// Validated reply text plus the usage the provider reported, if any.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Generation {
+    pub text: String,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    /// Provider-reported cost in USD (OpenRouter only).
+    pub cost: Option<f64>,
+}
+
+/// The provider answered with a non-success status, so the request was
+/// rejected rather than run (and is not billed).
+#[derive(Debug)]
+pub struct ProviderRejected(pub u16);
+
+impl std::fmt::Display for ProviderRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "inference provider rejected request: HTTP {}", self.0)
+    }
+}
+
+impl std::error::Error for ProviderRejected {}
 
 #[derive(Deserialize)]
 struct AnthropicBlock {
@@ -152,6 +185,10 @@ struct Response {
 struct Usage {
     #[serde(default)]
     cost: Option<f64>,
+    #[serde(default)]
+    prompt_tokens: Option<u64>,
+    #[serde(default)]
+    completion_tokens: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -230,6 +267,21 @@ impl InferenceTransport {
         prompt: &str,
         api_key: Option<&str>,
     ) -> Result<String> {
+        self.generate_with_usage(authorization, provider, model, prompt, api_key)
+            .await
+            .map(|generation| generation.text)
+    }
+
+    /// Like `generate`, but also returns the usage the provider reported so
+    /// callers can account for spend.
+    pub async fn generate_with_usage(
+        &self,
+        authorization: &InferenceAuthorization,
+        provider: InferenceProvider,
+        model: &str,
+        prompt: &str,
+        api_key: Option<&str>,
+    ) -> Result<Generation> {
         let billing = authorization
             .authorize(provider, model)
             .map_err(|reason| anyhow::anyhow!("inference authorization denied: {reason:?}"))?;
@@ -299,21 +351,18 @@ impl InferenceTransport {
             .await
             .map_err(|_| anyhow::anyhow!("inference provider unavailable"))?;
         if !response.status().is_success() {
-            bail!(
-                "inference provider rejected request: HTTP {}",
-                response.status().as_u16()
-            );
+            return Err(ProviderRejected(response.status().as_u16()).into());
         }
         let bytes = read_bounded(&mut response).await?;
         if provider == InferenceProvider::Anthropic {
             return parse_anthropic_response(&bytes);
         }
-        let (output, cost) = parse_response(&bytes)?;
+        let generation = parse_response(&bytes)?;
         // A free-only reply is kept only when OpenRouter reports exactly zero cost.
-        if free_only && cost != Some(0.0) {
+        if free_only && generation.cost != Some(0.0) {
             return Err(FreeOnlyCharged.into());
         }
-        Ok(output)
+        Ok(generation)
     }
 
     /// Reads the OpenRouter key's spending limits. Sends no prompt.
@@ -367,7 +416,7 @@ async fn read_bounded(response: &mut reqwest::Response) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn parse_anthropic_response(bytes: &[u8]) -> Result<String> {
+fn parse_anthropic_response(bytes: &[u8]) -> Result<Generation> {
     let parsed: AnthropicResponse =
         serde_json::from_slice(bytes).map_err(|_| anyhow::anyhow!("invalid inference response"))?;
     if parsed.kind != "message" {
@@ -383,16 +432,22 @@ fn parse_anthropic_response(bytes: &[u8]) -> Result<String> {
         .filter_map(|block| block.text)
         .collect();
     validate_generated_text(&output)?;
-    Ok(output)
+    let usage = parsed.usage;
+    Ok(Generation {
+        text: output,
+        input_tokens: usage.as_ref().and_then(|usage| usage.input_tokens),
+        output_tokens: usage.as_ref().and_then(|usage| usage.output_tokens),
+        cost: None,
+    })
 }
 
-fn parse_response(bytes: &[u8]) -> Result<(String, Option<f64>)> {
+fn parse_response(bytes: &[u8]) -> Result<Generation> {
     let parsed: Response =
         serde_json::from_slice(bytes).map_err(|_| anyhow::anyhow!("invalid inference response"))?;
     if parsed.error.is_some() {
         bail!("inference provider reported an error");
     }
-    let cost = parsed.usage.and_then(|usage| usage.cost);
+    let usage = parsed.usage;
     let choice = parsed
         .choices
         .into_iter()
@@ -403,7 +458,12 @@ fn parse_response(bytes: &[u8]) -> Result<(String, Option<f64>)> {
     }
     let output = choice.message.content.unwrap_or_default();
     validate_generated_text(&output)?;
-    Ok((output, cost))
+    Ok(Generation {
+        text: output,
+        input_tokens: usage.as_ref().and_then(|usage| usage.prompt_tokens),
+        output_tokens: usage.as_ref().and_then(|usage| usage.completion_tokens),
+        cost: usage.as_ref().and_then(|usage| usage.cost),
+    })
 }
 
 fn validate_generated_text(output: &str) -> Result<()> {
@@ -502,7 +562,8 @@ pub(crate) mod mock {
             "role": "assistant",
             "model": "claude-test-5",
             "content": [{ "type": "text", "text": content }],
-            "stop_reason": "end_turn"
+            "stop_reason": "end_turn",
+            "usage": { "input_tokens": 3, "output_tokens": 5 }
         })
         .to_string()
     }

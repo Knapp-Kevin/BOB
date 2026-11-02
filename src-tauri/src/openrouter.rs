@@ -7,15 +7,17 @@
 //! model that was authorized when granted, and is revoked by any change to the
 //! model authorization or credential.
 //!
-//! Two B.O.B.-side spending safeguards sit on top of the vendor console:
-//! free-only mode (only `:free` models, every price capped at zero, and any
-//! reply reporting a charge revokes the session), and, for metered use, a key
-//! check before enabling and before every request that refuses keys without a
-//! credit limit or with no credit left.
+//! B.O.B.-side spending safeguards sit on top of the vendor console:
+//! free-only mode is the default (only `:free` models, every price capped at
+//! zero, and any reply reporting a charge revokes the session). Paid use needs
+//! a B.O.B. monthly spending limit, charged with OpenRouter's reported cost of
+//! each reply, plus a key check before enabling and before every request that
+//! refuses keys without a credit limit or with no credit left.
 
 use crate::inference_policy::{InferenceAuthorization, InferenceProvider, ModelBilling};
 use crate::inference_transport::{FreeOnlyCharged, InferenceTransport, OpenRouterKeyStatus};
 use crate::secrets::{OsSecretStore, SecretName, SecretStore};
+use crate::spend;
 use crate::state::Store;
 use anyhow::{anyhow, bail, Result};
 use serde::Serialize;
@@ -134,6 +136,7 @@ impl OpenRouterCredentials {
             .read(SecretName::OpenRouterApiKey)?
             .ok_or_else(|| anyhow!("OpenRouter credential not configured"))?;
         if billing == ModelBilling::Metered {
+            require_spending_headroom(store)?;
             self.require_capped_key(transport, key.as_str()).await?;
         }
         *self
@@ -164,15 +167,21 @@ impl OpenRouterCredentials {
             .secrets
             .read(SecretName::OpenRouterApiKey)?
             .ok_or_else(|| anyhow!("OpenRouter credential not configured"))?;
-        if billing == ModelBilling::Metered {
-            // The cap may have been removed on openrouter.ai since Chat was enabled.
-            if let Err(error) = self.require_capped_key(transport, key.as_str()).await {
+        let metered = billing == ModelBilling::Metered;
+        if metered {
+            // The limit may be used up, or the key cap removed on openrouter.ai,
+            // since Chat was enabled.
+            let checked = match require_spending_headroom(store) {
+                Ok(()) => self.require_capped_key(transport, key.as_str()).await,
+                Err(error) => Err(error),
+            };
+            if let Err(error) = checked {
                 self.revoke_session();
                 return Err(error);
             }
         }
         let result = transport
-            .generate(
+            .generate_with_usage(
                 &authorization,
                 InferenceProvider::OpenRouter,
                 &model,
@@ -186,8 +195,29 @@ impl OpenRouterCredentials {
         {
             self.revoke_session();
         }
-        result
+        let generation = result?;
+        if metered {
+            // Paid replies are charged OpenRouter's reported cost. Without one,
+            // spend cannot be tracked, so the reply is dropped and Chat stops.
+            let Some(cost) = generation.cost.and_then(spend::reported_cost_to_micros) else {
+                self.revoke_session();
+                bail!("OpenRouter did not report the cost of a paid reply; Chat turned off");
+            };
+            store.adjust_spend("openrouter", &spend::current_month(), cost)?;
+        }
+        Ok(generation.text)
     }
+}
+
+/// Paid use needs a configured monthly limit with spend still below it.
+fn require_spending_headroom(store: &Store) -> Result<()> {
+    let cap = store
+        .openrouter_monthly_cap()?
+        .ok_or_else(|| anyhow!("OpenRouter monthly spending limit not configured"))?;
+    if store.spent_micros("openrouter", &spend::current_month())? >= cap {
+        bail!("monthly spending limit reached");
+    }
+    Ok(())
 }
 
 fn persisted_authorization(store: &Store) -> Result<(InferenceAuthorization, String)> {
@@ -211,6 +241,9 @@ pub struct OpenRouterSettings {
     metered_enabled: bool,
     free_only: bool,
     chat_session_enabled: bool,
+    monthly_cap_micros: Option<i64>,
+    spent_this_month_micros: i64,
+    suggested_monthly_cap_micros: i64,
 }
 
 fn settings_view(
@@ -227,12 +260,21 @@ fn settings_view(
     let free_only = store
         .openrouter_free_only()
         .map_err(|error| error.to_string())?;
+    let monthly_cap_micros = store
+        .openrouter_monthly_cap()
+        .map_err(|error| error.to_string())?;
+    let spent_this_month_micros = store
+        .spent_micros("openrouter", &spend::current_month())
+        .map_err(|error| error.to_string())?;
     Ok(OpenRouterSettings {
         model_id,
         cloud_enabled,
         metered_enabled,
         free_only,
         chat_session_enabled,
+        monthly_cap_micros,
+        spent_this_month_micros,
+        suggested_monthly_cap_micros: spend::DEFAULT_MONTHLY_CAP_MICROS,
     })
 }
 
@@ -252,9 +294,20 @@ pub fn configure_openrouter_model(
     cloud_enabled: bool,
     metered_enabled: bool,
     free_only: bool,
+    monthly_cap_usd: Option<f64>,
 ) -> std::result::Result<OpenRouterSettings, String> {
     // Every model or billing policy change requires a fresh session opt-in.
     credentials.revoke_session();
+    let cap = monthly_cap_usd.and_then(spend::dollars_to_micros);
+    // Paid use requires a monthly spending limit as part of its configuration.
+    if metered_enabled && !free_only && cap.is_none() {
+        return Err("OpenRouter monthly spending limit not configured".into());
+    }
+    if cap.is_some() {
+        store
+            .set_openrouter_monthly_cap(cap)
+            .map_err(|error| error.to_string())?;
+    }
     // Switch to free-only first and leave it last, so a partial failure can
     // only ever leave the stricter mode in place.
     if free_only {
@@ -377,9 +430,12 @@ mod tests {
         }
     }
 
+    /// A profile set up for paid OpenRouter use with a $20 monthly limit.
     fn fixture() -> Result<(tempfile::TempDir, Store, OpenRouterCredentials)> {
         let directory = tempfile::tempdir()?;
         let store = Store::open(directory.path())?;
+        store.set_openrouter_free_only(false)?;
+        store.set_openrouter_monthly_cap(Some(spend::DEFAULT_MONTHLY_CAP_MICROS))?;
         let credentials = OpenRouterCredentials::with_secrets(Arc::new(FakeSecretStore::default()));
         Ok((directory, store, credentials))
     }
@@ -616,6 +672,65 @@ mod tests {
                 .unwrap()
                 .chat_session_enabled
         );
+        Ok(())
+    }
+
+    #[test]
+    fn new_profiles_are_free_only_and_paid_use_needs_a_monthly_limit() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let store = Store::open(directory.path())?;
+        let credentials = OpenRouterCredentials::with_secrets(Arc::new(FakeSecretStore::default()));
+        credentials.configure(KEY.into())?;
+        assert!(store.openrouter_free_only()?);
+        store.set_openrouter_settings(Some(MODEL), true, true)?;
+        assert!(
+            enable(&credentials, &store).is_err(),
+            "free-only default refuses paid model"
+        );
+        store.set_openrouter_free_only(false)?;
+        let error = enable(&credentials, &store).unwrap_err();
+        assert!(error.to_string().contains("spending limit not configured"));
+        store.set_openrouter_monthly_cap(Some(spend::DEFAULT_MONTHLY_CAP_MICROS))?;
+        assert!(enable(&credentials, &store)?);
+        Ok(())
+    }
+
+    #[test]
+    fn paid_replies_are_charged_and_the_limit_stops_chat() -> Result<()> {
+        let (_dir, store, credentials) = fixture()?;
+        credentials.configure(KEY.into())?;
+        store.set_openrouter_settings(Some(MODEL), true, true)?;
+        enable(&credentials, &store)?;
+        let month = spend::current_month();
+        let server = serve(200, completion_costing("paid", 0.0125));
+        let transport = InferenceTransport::for_test(server.endpoint.clone())?;
+        block_on(credentials.generate(&store, &transport, "hi"))?;
+        assert_eq!(store.spent_micros("openrouter", &month)?, 12_500);
+
+        store.adjust_spend("openrouter", &month, spend::DEFAULT_MONTHLY_CAP_MICROS)?;
+        let error = block_on(credentials.generate(&store, &transport, "hi")).unwrap_err();
+        assert!(error.to_string().contains("monthly spending limit reached"));
+        assert_eq!(credentials.session_model()?, None, "Chat turned off");
+        assert_eq!(chat_requests(&server), 1, "no request past the limit");
+        assert!(enable(&credentials, &store).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn paid_reply_without_a_reported_cost_turns_chat_off() -> Result<()> {
+        let (_dir, store, credentials) = fixture()?;
+        credentials.configure(KEY.into())?;
+        store.set_openrouter_settings(Some(MODEL), true, true)?;
+        enable(&credentials, &store)?;
+        let no_cost = serde_json::json!({
+            "choices": [{ "message": { "content": "x" }, "finish_reason": "stop" }]
+        })
+        .to_string();
+        let server = serve(200, no_cost);
+        let transport = InferenceTransport::for_test(server.endpoint.clone())?;
+        let error = block_on(credentials.generate(&store, &transport, "hi")).unwrap_err();
+        assert!(error.to_string().contains("did not report the cost"));
+        assert_eq!(credentials.session_model()?, None);
         Ok(())
     }
 

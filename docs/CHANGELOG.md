@@ -32,7 +32,7 @@ All notable changes to the revived B.O.B. project are recorded here. This file d
 - preserved deterministic B.O.B. operation with no inference configured and no silent paid/provider/model fallback;
 - added default-off OpenAI API and Anthropic API Chat adapters (`metered`, OS-stored keys, per-launch session grant), with schema v6 `adapter_settings` and a one-cloud-backend-at-a-time rule;
 - recorded the owner decision that B.O.B. is API-only: vendor agent CLIs (Claude Code, Codex) are out of scope;
-- added OpenRouter spending safeguards: a free-models-only mode (schema v7 `free_only`, zero `max_price` on every request, session revoked on any reported charge) and a capped-key check that refuses paid OpenRouter use when the key has no credit limit.
+- added spending safeguards: OpenRouter defaults to free models only (zero `max_price` on every request, session revoked on any reported charge); every metered provider requires a B.O.B. monthly spending limit (pre-filled at $20) enforced by a per-month spend ledger (schema v7); paid OpenRouter use also needs a capped key; Settings opens each provider's key, limit, and pricing pages directly.
 
 ### Calm primary workflow
 

@@ -68,7 +68,7 @@ Backend changes that materially affect privacy, billing, or user intent must not
 
 ## Metered enablement
 
-Metered inference requires an explicit settings action. The UI must identify that the provider is metered. Later implementations may add budget ceilings, but absence of a budget feature does not weaken the default-disabled rule.
+Metered inference requires an explicit settings action. The UI must identify that the provider is metered. Every metered path also requires a B.O.B.-side monthly spending limit as part of its configuration (pre-filled at $20, user-adjustable, never optional); see "B.O.B. monthly spending limits" below.
 
 ## OpenRouter metered boundary
 
@@ -83,9 +83,10 @@ Choosing an OpenRouter model does not fix the upstream host that serves it, nor 
 
 ### OpenRouter spending safeguards
 
-B.O.B. adds two safeguards of its own on top of the vendor console:
+B.O.B. adds its own safeguards on top of the vendor console:
 
-- **Free models only** (a persisted setting, off by default for existing profiles). Only model IDs ending in `:free` are accepted, and that path is classified `free`: it needs the cloud permission and the session opt-in, not the metered permission. Every request also sends `provider.max_price` with `prompt`, `completion`, `request`, and `image` all `0`. OpenRouter documents that `max_price` "will prevent your request from running if the price is not available", so a paid route is refused on OpenRouter's side. B.O.B. accepts the reply only when OpenRouter's `usage.cost` is exactly `0`. A non-zero or missing cost discards the reply and revokes the Chat session. The `openrouter/free` router stays rejected because it picks a different model per request.
+- **Free models only is the default** for new and upgraded profiles. Only model IDs ending in `:free` are accepted, and that path is classified `free`: it needs the cloud permission and the session opt-in, not the metered permission. Every request also sends `provider.max_price` with `prompt`, `completion`, `request`, and `image` all `0`. OpenRouter documents that `max_price` "will prevent your request from running if the price is not available", so a paid route is refused on OpenRouter's side. B.O.B. accepts the reply only when OpenRouter's `usage.cost` is exactly `0`. A non-zero or missing cost discards the reply and revokes the Chat session. The `openrouter/free` router stays rejected because it picks a different model per request. A profile upgraded with a paid OpenRouter authorization must turn free-only off and save a monthly limit before paid Chat works again.
+- **Monthly spending limit for paid models** (required, pre-filled at $20). Each paid reply is charged OpenRouter's reported `usage.cost`. Chat is refused, and an active session revoked, once this UTC month's spend reaches the limit. A paid reply without a reported cost is dropped and Chat turns off. OpenRouter does not quote a price before the request, so spend can exceed the limit by at most one bounded request.
 - **Capped key for paid use.** Before a metered OpenRouter session is enabled, and before every metered request, B.O.B. reads `GET /api/v1/key`. It refuses when the key has no credit limit (`limit: null`) or no credit left, and a failed check also refuses. A cap removed on openrouter.ai mid-session revokes the session before the next prompt is sent. Settings shows the limit, remaining credit, and free-model requests left today; it never shows the key or account identity.
 
 Known limits: OpenRouter rate-limits `:free` models (20 per minute; 50 per day below 10 purchased credits, 1,000 above). Free variants can be retired (`expiration_date`). Free hosts may not meet `data_collection: "deny"`. B.O.B. keeps `deny`, so such a model fails with a clear "no host meets B.O.B.'s price and privacy limits" error rather than relaxing privacy.
@@ -106,7 +107,11 @@ The OpenAI and Anthropic API adapters follow the OpenRouter boundary exactly: di
 
 At most one cloud Chat backend (OpenRouter, OpenAI, or Anthropic) may hold a session grant at a time. Enabling a second one is refused until the first is turned off, so the backend never changes silently.
 
-B.O.B. has no budget ceiling of its own. The spending limit for a metered API key is set in the vendor console (see `docs/LIVE_INFERENCE_VALIDATION.md`).
+### B.O.B. monthly spending limits
+
+Metered OpenAI and Anthropic use requires, as part of the model authorization: a monthly spending limit in US dollars (pre-filled at $20) and the approved model's input and output price per million tokens (from the vendor's pricing page, opened from Settings). B.O.B. keeps a per-provider ledger of spend for the current UTC month in SQLite (amounts only, no prompts). Before each request it reserves the worst-case cost: prompt bytes plus 64 tokens of framing at the input price, plus the 512-token output cap at the output price. This bound is exact for byte-level tokenizers, which emit at most one token per byte. It refuses the request if the reservation could take the month past the limit. After the reply it charges the actual reported token usage instead. A request the provider rejects (non-2xx) releases its reservation. Any uncertain outcome (timeout, unreadable reply, missing usage) stays charged at worst case. Chat cannot be enabled once the limit is reached. Entered prices are the user's responsibility; a wrong price makes the B.O.B. count wrong, which is why a vendor-console limit is still recommended (`docs/LIVE_INFERENCE_VALIDATION.md`).
+
+Settings opens each vendor's API-key, limits, and pricing pages, and OpenRouter's key and free-model pages, in the default browser through a fixed allowlist of HTTPS URLs; the frontend names a page, never a URL.
 
 ## Vendor agent CLIs are out of scope (owner decision, 2026-11-02)
 

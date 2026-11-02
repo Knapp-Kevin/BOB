@@ -1,6 +1,6 @@
 import { configureOpenRouterCredential, configureOpenRouterModel, loadOpenRouterCredentialStatus, loadOpenRouterKeyStatus, loadOpenRouterSettings, removeOpenRouterCredential, setOpenRouterChatSession, type OpenRouterAuthorization, type OpenRouterKeyStatus, type OpenRouterSettings } from "./native";
 
-const disabledSettings = (): OpenRouterSettings => ({ modelId: null, cloudEnabled: false, meteredEnabled: false, freeOnly: false, chatSessionEnabled: false });
+const disabledSettings = (): OpenRouterSettings => ({ modelId: null, cloudEnabled: false, meteredEnabled: false, freeOnly: true, chatSessionEnabled: false, monthlyCapMicros: null, spentThisMonthMicros: 0, suggestedMonthlyCapMicros: 20_000_000 });
 
 export let openRouterSettings: OpenRouterSettings = disabledSettings();
 export let openRouterCredentialConfigured = false;
@@ -19,7 +19,9 @@ export const isFreeModel = (modelId: string | null) => Boolean(modelId && modelI
 export const openRouterChatAvailable = () => openRouterCredentialConfigured
   && Boolean(openRouterSettings.modelId)
   && openRouterSettings.cloudEnabled
-  && (openRouterSettings.freeOnly ? isFreeModel(openRouterSettings.modelId) : openRouterSettings.meteredEnabled);
+  && (openRouterSettings.freeOnly
+    ? isFreeModel(openRouterSettings.modelId)
+    : openRouterSettings.meteredEnabled && openRouterSettings.monthlyCapMicros !== null && openRouterSettings.spentThisMonthMicros < openRouterSettings.monthlyCapMicros);
 
 export let openRouterKeyStatus: OpenRouterKeyStatus | "checking" | "failed" | null = null;
 
@@ -78,7 +80,11 @@ export async function setOpenRouterChatEnabled(enabled: boolean): Promise<boolea
       ? "OpenRouter Chat could not be confirmed off. Restart B.O.B. to clear the session."
       : /uncapped key refused/.test(detail)
         ? "OpenRouter Chat was not enabled: paid use needs a key with a credit limit and credit left. Set one at openrouter.ai → Keys, or switch to free models only."
-        : /another cloud Chat backend/.test(detail)
+        : /spending limit not configured/.test(detail)
+          ? "OpenRouter Chat was not enabled: paid models need a monthly spending limit. Save one in the form."
+          : /spending limit reached/.test(detail)
+            ? "OpenRouter Chat was not enabled: this month's spending limit is used up."
+            : /another cloud Chat backend/.test(detail)
           ? "OpenRouter Chat was not enabled: turn off the other cloud provider first."
           : "OpenRouter Chat could not be enabled. Check the API key and model authorization.";
     return false;
@@ -130,7 +136,7 @@ export async function saveOpenRouterAuthorization(settings: OpenRouterAuthorizat
     openRouterStatus = result.freeOnly
       ? (result.cloudEnabled ? "Free models only: every request is capped at a price of zero." : "Free models only. Cloud transmission is still off.")
       : result.cloudEnabled && result.meteredEnabled
-        ? "Cloud and metered inference authorized for the selected model. The key must have a credit limit."
+        ? `Paid models authorized with a monthly limit of $${((result.monthlyCapMicros ?? 0) / 1_000_000).toFixed(2)}. The key must also have a credit limit.`
         : "OpenRouter spending remains disabled.";
   } catch {
     openRouterStatus = "Model authorization was not saved. Use a vendor/model ID; OpenRouter routers such as openrouter/auto or openrouter/free are not allowed.";
@@ -143,6 +149,8 @@ export async function saveOpenRouterAuthorization(settings: OpenRouterAuthorizat
 export function openRouterFailureMessage(error: unknown): string {
   const detail = String(error);
   if (/uncapped key refused/.test(detail)) return "OpenRouter Chat was turned off: the key has no credit limit or no credit left.";
+  if (/spending limit reached/.test(detail)) return "OpenRouter reached your monthly spending limit, so Chat was turned off. Nothing was sent.";
+  if (/did not report the cost/.test(detail)) return "OpenRouter did not report what that reply cost, so Chat was turned off.";
   if (/reported a charge/.test(detail)) return "OpenRouter could not confirm this free-only reply was free, so Chat was turned off.";
   if (/HTTP 404/.test(detail)) return "No OpenRouter host for this model meets B.O.B.'s price and privacy limits.";
   if (/HTTP 401|HTTP 403/.test(detail)) return "OpenRouter rejected the saved API key.";
