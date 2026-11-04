@@ -1,6 +1,6 @@
 # QA report: "B.O.B.: Find Your Next Step", first review cut v1 (2026-11-04)
 
-**Status: private first review cut, awaiting owner review. Not approved, not published.**
+**Status: approved by the owner as cut on 2026-11-04 ("Approved as cut").** Published on `media/bob-find-your-next-step-2026-11-04` at `09f2bf9349aa07aa251ee6d7f48f639591fdda72`. The owner's review was the human listen that this report could not do.
 
 - **Branch:** `demo/find-your-next-step-v1-20261103`, from `master` at `ecce695`, the `v0.1.0` tag commit.
 - **Script and storyboard:** [`../SCRIPT_AND_STORYBOARD.md`](../SCRIPT_AND_STORYBOARD.md).
