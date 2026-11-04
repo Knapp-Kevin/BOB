@@ -1,0 +1,22 @@
+record-start film-take2
+wait 1500
+sync
+wait 300
+mark cut-in
+relaunch
+wait 1200
+click 84 275
+wait 1600
+mark S07
+move 420 880
+wait 4300
+move 90 157
+wait 500
+click 90 157
+wait 1200
+shot take2-after-today
+move 1300 700
+wait 5000
+mark end
+wait 1500
+record-stop

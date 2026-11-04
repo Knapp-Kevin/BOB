@@ -1,0 +1,79 @@
+move 1100 700
+record-start film-take
+wait 1500
+sync
+wait 300
+mark S01
+wait 1200
+move 1450 200
+wait 1600
+move 1450 262
+wait 1400
+move 1450 312
+wait 1700
+move 1530 540
+wait 2400
+mark S02
+click 900 417
+wait 300
+type Renew the car registration before Friday
+wait 400
+key enter
+wait 900
+click 88 216
+wait 2600
+mark S03
+move 534 371
+wait 500
+click 534 371
+wait 900
+key down
+wait 300
+key enter
+wait 1800
+move 1517 377
+wait 1300
+click 1517 377
+wait 1400
+mark S04
+move 690 470
+wait 2200
+move 558 539
+wait 1600
+click 558 539
+wait 3200
+mark S05
+move 122 1010
+wait 900
+click 122 1010
+wait 2600
+move 756 300
+wait 1500
+click 756 300
+wait 2600
+mark S06
+click 122 1010
+wait 900
+click 84 275
+wait 1300
+click 1571 424
+wait 1700
+click 1571 629
+wait 2600
+mark S06-saved
+wait 1200
+mark cut-out
+relaunch
+wait 1200
+click 84 275
+wait 1600
+mark S07
+move 420 880
+wait 4300
+click 90 157
+wait 1500
+move 1300 700
+wait 5000
+mark end
+wait 1500
+record-stop
