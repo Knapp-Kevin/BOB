@@ -1,0 +1,2 @@
+# Store every file byte-exact so it matches the SHA-256 values in media-manifest.json.
+* -text
